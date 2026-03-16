@@ -112,4 +112,4 @@ Tabelas criadas automaticamente na primeira carga:
 
 ## Licença
 
-MIT — Use por sua conta e risco. Sem garantias de qualquer tipo.
+GPL 3.0 — Use por sua conta e risco. Sem garantias de qualquer tipo.
