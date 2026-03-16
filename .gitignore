@@ -1,0 +1,23 @@
+# Certificados digitais (nunca versionar)
+modules/addons/nfse_nacional/certs/
+*.pfx
+*.p12
+*.pem
+*.cer
+*.crt
+
+# Arquivos de debug gerados pelo addon
+modules/addons/nfse_nacional/debug_*.xml
+modules/addons/nfse_nacional/debug_*.txt
+
+# Editores e OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+
+# Dependencias (addon nao usa Composer)
+vendor/
+node_modules/
