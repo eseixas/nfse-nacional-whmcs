@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1] — 2026-03-30
+
+### Novidades
+
+- Campo **Série da NFS-e** adicionado nas configurações do addon (antes era fixo em 2)
+- XML agora é extraído diretamente do **Emissor Nacional** (API SefinNacional) em visualização, download individual e exportação em lote
+- Widget de emissão na fatura com posicionamento mais robusto (compatível com WHMCS 7/8/9)
+
+### Correções
+
+- Removido arquivo de índice CSV (`_indice.csv`) da exportação ZIP — agora contém apenas os XMLs
+- Campo **NFS-e No** agora exibe o valor do **nDPS** (número da DPS) em vez do numero_nfse
+- Método `consultarPorChave` agora processa corretamente respostas gzip e JSON com `nfseXmlGZipB64`
+- Fallback para XML local quando a API do Emissor Nacional não estiver disponível
+
 ## [1.0] — 2026-03-16
 
 ### Lançamento inicial

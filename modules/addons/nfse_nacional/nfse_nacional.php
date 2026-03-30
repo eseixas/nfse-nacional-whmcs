@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.0',
+        'version'     => '1.1',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -127,6 +127,13 @@ function nfse_nacional_config()
                 'Size'         => '10',
                 'Default'      => '1',
                 'Description'  => 'Use para evitar conflito com outro sistema emissor. Ex: se o outro sistema ja emitiu ate DPS 500, coloque 501 aqui. O proximo DPS deste addon sera o maior entre este valor e o ultimo ja emitido.',
+            ],
+            'serie' => [
+                'FriendlyName' => 'Serie da NFS-e',
+                'Type'         => 'text',
+                'Size'         => '5',
+                'Default'      => '2',
+                'Description'  => 'Numero da serie da DPS. Padrao: 2. Verifique com sua prefeitura a serie correta.',
             ],
         ],
     ];

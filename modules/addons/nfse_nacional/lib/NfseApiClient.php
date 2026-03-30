@@ -109,7 +109,44 @@ class NfseApiClient
     public function consultarPorChave($chaveAcesso)
     {
         $endpoint = $this->baseUrl . 'nfse/' . urlencode($chaveAcesso);
-        return $this->get($endpoint);
+        $result   = $this->get($endpoint);
+
+        // Post-processa: extrai o XML da NFSe da resposta
+        if ($result['success'] && !empty($result['raw'])) {
+            $body = $result['raw'];
+            // Tenta descomprimir gzip
+            if (strlen($body) > 2 && ord($body[0]) === 0x1f && ord($body[1]) === 0x8b) {
+                $dec = @gzdecode($body);
+                if ($dec !== false) {
+                    $body = $dec;
+                }
+            }
+            // Tenta JSON com nfseXmlGZipB64
+            $json = json_decode($body, true);
+            if (!empty($json['nfseXmlGZipB64'])) {
+                $nfseGzip = base64_decode($json['nfseXmlGZipB64']);
+                $nfseXml  = @gzdecode($nfseGzip);
+                if ($nfseXml === false) { $nfseXml = $nfseGzip; }
+                $result['nfse_xml'] = $nfseXml;
+                if (preg_match('/<nNFSe[^>]*>(.*?)<\/nNFSe>/s', $nfseXml, $m)) {
+                    $result['numero_nfse'] = trim($m[1]);
+                }
+                if (preg_match('/<infNFSe\s[^>]*Id="([^"]+)"/', $nfseXml, $m)) {
+                    $result['chave_acesso'] = trim($m[1]);
+                }
+            }
+            // Se body ja for XML valido (sem JSON wrapper), usa diretamente
+            if (empty($result['nfse_xml']) && strpos($body, '<NFSe') !== false) {
+                $result['nfse_xml'] = $body;
+                if (preg_match('/<nNFSe[^>]*>(.*?)<\/nNFSe>/s', $body, $m)) {
+                    $result['numero_nfse'] = trim($m[1]);
+                }
+                if (preg_match('/<infNFSe\s[^>]*Id="([^"]+)"/', $body, $m)) {
+                    $result['chave_acesso'] = trim($m[1]);
+                }
+            }
+        }
+        return $result;
     }
 
     /**

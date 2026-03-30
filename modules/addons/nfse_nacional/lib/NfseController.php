@@ -192,7 +192,7 @@ class NfseController
                     <td><a href="invoices.php?action=edit&id=<?= $n->invoice_id ?>" target="_blank">#<?= $n->invoice_id ?></a></td>
                     <td><?= $n->client_id ?></td>
                     <td>R$ <?= number_format($n->valor, 2, ',', '.') ?></td>
-                    <td><strong><?= $n->numero_nfse ?: '-' ?></strong></td>
+                    <td><strong><?= $n->n_dps ?: '-' ?></strong></td>
                     <td><?= $n->codigo_verificacao ?: '-' ?></td>
                     <td><?= $this->statusBadge($n->status) ?></td>
                     <td><?= $n->emitida_em ?: '-' ?></td>
@@ -398,7 +398,7 @@ class NfseController
             <div class="panel-body">
                 <p class="text-muted">
                     Selecione o periodo e baixe um <strong>.zip</strong> com os XMLs de todas as
-                    NFS-e emitidas no intervalo, alem de um indice em CSV.
+                    NFS-e emitidas no intervalo.
                 </p>
 
                 <form method="post" action="<?= $this->modulelink ?>&action=exportar">
@@ -479,7 +479,7 @@ class NfseController
                     <?php foreach ($previewMes as $r): ?>
                     <tr>
                         <td><a href="invoices.php?action=edit&id=<?= $r->invoice_id ?>" target="_blank">#<?= $r->invoice_id ?></a></td>
-                        <td><strong><?= htmlspecialchars($r->numero_nfse) ?></strong></td>
+                        <td><strong><?= htmlspecialchars($r->n_dps ?: '-') ?></strong></td>
                         <td><?= htmlspecialchars($r->codigo_verificacao ?: '-') ?></td>
                         <td>R$ <?= number_format($r->valor, 2, ',', '.') ?></td>
                         <td>R$ <?= number_format($r->valor_iss ?? 0, 2, ',', '.') ?></td>
@@ -558,31 +558,59 @@ class NfseController
 
         $cnpj = preg_replace('/\D/', '', $this->config['cnpj'] ?? '');
 
+        // Tenta buscar o XML diretamente do Emissor Nacional via API
+        $api = null;
+        try {
+            require_once __DIR__ . '/CertManager.php';
+            $certMgr = new CertManager();
+            if ($certMgr->exists()) {
+                require_once __DIR__ . '/NfseApiClient.php';
+                $api = new NfseApiClient(
+                    $this->config['ambiente'] ?? 'producao_restrita',
+                    $certMgr->getCertPath(),
+                    $certMgr->getPassword()
+                );
+            }
+        } catch (\Exception $e) {
+            $api = null;
+        }
+
         foreach ($registros as $reg) {
-            if (empty($reg->xml_enviado)) continue;
+            if (empty($reg->xml_enviado) && empty($reg->xml_retorno)) continue;
 
             $numeroNfse  = $reg->numero_nfse ?: ('fat' . $reg->invoice_id);
             $dataEmissao = $reg->emitida_em ? date('Ymd', strtotime($reg->emitida_em)) : date('Ymd');
             $nomeArq     = sprintf('NFSe_%s_%s_%s.xml', $cnpj, $numeroNfse, $dataEmissao);
 
-            $zip->addFromString($nomeArq, $reg->xml_enviado);
+            $xmlContent = null;
+
+            // Tenta obter XML diretamente da API do Emissor Nacional
+            if ($api !== null && !empty($reg->codigo_verificacao)) {
+                try {
+                    $chaveUrl = $reg->codigo_verificacao;
+                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
+                        $chaveUrl = $mxc[1];
+                    }
+                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
+                    $apiResp = $api->consultarPorChave($chaveUrl);
+                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
+                        $xmlContent = $apiResp['nfse_xml'];
+                    }
+                } catch (\Exception $e) {
+                    // Fallback para XML local
+                }
+            }
+
+            // Fallback: usa o XML armazenado localmente
+            if ($xmlContent === null) {
+                $xmlContent = $reg->xml_retorno ?: $reg->xml_enviado ?: '';
+            }
+
+            if (!empty($xmlContent)) {
+                $zip->addFromString($nomeArq, $xmlContent);
+            }
         }
 
-        // CSV de indice
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8 para abrir corretamente no Excel
-        $csv .= "Fatura;NFS-e No;Cod. Verificacao;Valor (R$);ISS (R$);Status;Emitida em\n";
-        foreach ($registros as $reg) {
-            $csv .= implode(';', [
-                '#' . $reg->invoice_id,
-                $reg->numero_nfse ?: '-',
-                $reg->codigo_verificacao ?: '-',
-                number_format($reg->valor, 2, ',', '.'),
-                number_format($reg->valor_iss ?? 0, 2, ',', '.'),
-                $reg->status,
-                $reg->emitida_em ?: '-',
-            ]) . "\n";
-        }
-        $zip->addFromString('_indice.csv', $csv);
         $zip->close();
 
         // Nome e download
@@ -767,7 +795,36 @@ class NfseController
             return;
         }
 
-        $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
+        $xml = null;
+
+        // Tenta buscar o XML completo diretamente do Emissor Nacional via API
+        if (!empty($record->codigo_verificacao)) {
+            try {
+                if ($this->certMgr->exists()) {
+                    $api = new NfseApiClient(
+                        $this->config['ambiente'] ?? 'producao_restrita',
+                        $this->certMgr->getCertPath(),
+                        $this->certMgr->getPassword()
+                    );
+                    $chaveUrl = $record->codigo_verificacao;
+                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
+                        $chaveUrl = $mxc[1];
+                    }
+                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
+                    $apiResp = $api->consultarPorChave($chaveUrl);
+                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
+                        $xml = $apiResp['nfse_xml'];
+                    }
+                }
+            } catch (\Exception $e) {
+                // Fallback para XML local
+            }
+        }
+
+        // Fallback: usa o XML armazenado localmente
+        if ($xml === null) {
+            $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
+        }
 
         // Formata XML para exibicao
         $xmlFormatado = '';
@@ -854,7 +911,37 @@ class NfseController
             die('NFS-e nao encontrada.');
         }
 
-        $xml  = $record->xml_retorno ?: $record->xml_enviado ?: '';
+        $xml = null;
+
+        // Tenta buscar o XML diretamente do Emissor Nacional via API
+        if (!empty($record->codigo_verificacao)) {
+            try {
+                if ($this->certMgr->exists()) {
+                    $api = new NfseApiClient(
+                        $this->config['ambiente'] ?? 'producao_restrita',
+                        $this->certMgr->getCertPath(),
+                        $this->certMgr->getPassword()
+                    );
+                    $chaveUrl = $record->codigo_verificacao;
+                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
+                        $chaveUrl = $mxc[1];
+                    }
+                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
+                    $apiResp = $api->consultarPorChave($chaveUrl);
+                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
+                        $xml = $apiResp['nfse_xml'];
+                    }
+                }
+            } catch (\Exception $e) {
+                // Fallback para XML local
+            }
+        }
+
+        // Fallback: usa o XML armazenado localmente
+        if ($xml === null) {
+            $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
+        }
+
         $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($record->numero_nfse ?? '0') . '.xml';
 
         header('Content-Type: application/xml; charset=UTF-8');

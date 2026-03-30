@@ -38,7 +38,7 @@ class NfseXmlBuilder
         // Subtrai 60s para evitar E0008 (clock skew entre servidor WHMCS e Receita Federal)
         $dhEmi     = date('Y-m-d\TH:i:sP', time() - 60);
         $dCompet   = date('Y-m-d', time() - 60);
-        $serie     = '2';
+        $serie     = trim($this->config['serie'] ?? '2') ?: '2';
         $seriePad  = str_pad($serie, 5, '0', STR_PAD_LEFT);
         $nDpsPad   = str_pad($nDps, 15, '0', STR_PAD_LEFT);
         $cLocEmiPad= str_pad($cLocEmi, 7, '0', STR_PAD_LEFT);

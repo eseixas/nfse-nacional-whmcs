@@ -117,7 +117,7 @@ add_hook('AdminAreaPage', 1, function ($vars) {
         <hr style="margin:8px 0;">
         <?php if ($nfse && $nfse->status === 'emitida'): ?>
             <span class="label label-success">Emitida</span>
-            NFS-e <strong>No <?= htmlspecialchars($nfse->numero_nfse) ?></strong>
+            NFS-e <strong>No <?= htmlspecialchars($nfse->n_dps ?? $nfse->numero_nfse) ?></strong>
             <?php if ($nfse->codigo_verificacao): ?> | Cod. Verif.: <code><?= htmlspecialchars($nfse->codigo_verificacao) ?></code><?php endif; ?>
             <br><small class="text-muted">em <?= $nfse->emitida_em ?></small>
             <br><br>
@@ -132,7 +132,7 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             </a>
         <?php elseif ($nfse && $nfse->status === 'cancelada'): ?>
             <span class="label label-default">Cancelada</span>
-            NFS-e No <?= htmlspecialchars($nfse->numero_nfse ?? '-') ?> foi cancelada.
+            NFS-e No <?= htmlspecialchars($nfse->n_dps ?? $nfse->numero_nfse ?? '-') ?> foi cancelada.
         <?php elseif ($nfse && $nfse->status === 'pendente'): ?>
             <span class="label label-warning">Pendente</span>
             Aguardando processamento da prefeitura.
@@ -170,9 +170,24 @@ add_hook('AdminAreaPage', 1, function ($vars) {
     return ['jquerycode' => '
         $(document).ready(function() {
             var box = ' . json_encode($html) . ';
-            $("h2.pagetitle, .content-header h1").first().closest(".row,.page-header").after(box);
-            if ($("#nfse-nacional-box").length === 0) {
-                $(".content-area, #main-body").prepend(box);
+            var inserted = false;
+            // Tenta inserir apos o cabecalho da pagina (WHMCS 7/8)
+            var $header = $("h2.pagetitle, .content-header h1").first().closest(".row,.page-header");
+            if ($header.length) {
+                $header.after(box);
+                inserted = true;
+            }
+            // Tenta inserir antes da tabela principal da fatura (WHMCS 9+)
+            if (!inserted) {
+                var $invoiceTable = $("#tabInvoiceDetails, .invoice-details, form[action*=invoices] .tab-content").first();
+                if ($invoiceTable.length) {
+                    $invoiceTable.before(box);
+                    inserted = true;
+                }
+            }
+            // Fallback para qualquer area de conteudo
+            if (!inserted) {
+                $(".content-area, #main-body, .main-content, #contentarea").first().prepend(box);
             }
         });
     '];
