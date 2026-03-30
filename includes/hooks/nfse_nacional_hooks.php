@@ -82,11 +82,18 @@ add_hook('InvoicePaid', 1, function ($vars) {
 
 add_hook('AdminAreaPage', 1, function ($vars) {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
-    if (strpos($uri, 'invoices.php') === false) return;
-    if (($_GET['action'] ?? '') !== 'edit') return;
-    if (empty($_GET['id'])) return;
+    $invoiceId = 0;
 
-    $invoiceId = (int)$_GET['id'];
+    // WHMCS 7/8: invoices.php?action=edit&id=X
+    if (strpos($uri, 'invoices.php') !== false && ($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
+        $invoiceId = (int)$_GET['id'];
+    }
+    // WHMCS 9+: /billing/invoice/{id} ou /gerenciamento/billing/invoice/{id}
+    elseif (preg_match('#/billing/invoice/(\d+)#', $uri, $m)) {
+        $invoiceId = (int)$m[1];
+    }
+
+    if ($invoiceId <= 0) return;
     $config    = nfse_nacional_get_config();
 
     if (empty($config['cnpj'])) return;
@@ -171,23 +178,50 @@ add_hook('AdminAreaPage', 1, function ($vars) {
         $(document).ready(function() {
             var box = ' . json_encode($html) . ';
             var inserted = false;
-            // Tenta inserir apos o cabecalho da pagina (WHMCS 7/8)
-            var $header = $("h2.pagetitle, .content-header h1").first().closest(".row,.page-header");
-            if ($header.length) {
-                $header.after(box);
-                inserted = true;
-            }
-            // Tenta inserir antes da tabela principal da fatura (WHMCS 9+)
+
+            // Estrategia 1: Inserir apos o card/panel "Summary" (entre Summary e Invoice Items)
+            $(".card-header, .panel-heading, .box-header, .widget-header, h3, h4, h5").each(function() {
+                if (inserted) return;
+                var txt = $(this).text().trim().toLowerCase();
+                if (txt.indexOf("summary") !== -1 || txt.indexOf("resumo") !== -1 || txt.indexOf("invoice summary") !== -1) {
+                    var $container = $(this).closest(".card, .panel, .box, .widget, section, .col-md-6, .col-lg-6, .col-sm-12, .col-md-12");
+                    if ($container.length) {
+                        $container.after(box);
+                        inserted = true;
+                    }
+                }
+            });
+
+            // Estrategia 2: WHMCS 7/8 - apos cabecalho da pagina  
             if (!inserted) {
-                var $invoiceTable = $("#tabInvoiceDetails, .invoice-details, form[action*=invoices] .tab-content").first();
-                if ($invoiceTable.length) {
-                    $invoiceTable.before(box);
+                var $header = $("h2.pagetitle, .content-header h1").first().closest(".row,.page-header");
+                if ($header.length) {
+                    $header.after(box);
                     inserted = true;
                 }
             }
-            // Fallback para qualquer area de conteudo
+
+            // Estrategia 3: WHMCS 9 - antes das tabs da fatura
             if (!inserted) {
-                $(".content-area, #main-body, .main-content, #contentarea").first().prepend(box);
+                var $tabs = $(".nav-tabs, .tab-content, #tab_content, #tabInvoiceDetails").first();
+                if ($tabs.length) {
+                    $tabs.before(box);
+                    inserted = true;
+                }
+            }
+
+            // Estrategia 4: Antes do primeiro card/panel
+            if (!inserted) {
+                var $card = $(".card, .panel, .box").first();
+                if ($card.length) {
+                    $card.before(box);
+                    inserted = true;
+                }
+            }
+
+            // Fallback generico
+            if (!inserted) {
+                $(".content-area, #main-body, .main-content, #contentarea, .content, .app-main__inner").first().prepend(box);
             }
         });
     '];
