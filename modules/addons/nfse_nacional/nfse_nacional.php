@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.1',
+        'version'     => '1.2',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -350,7 +350,7 @@ function nfse_nacional_sidebar($vars)
     return '<div class="widget"><div class="widget-header"><h3><i class="fa fa-file-text"></i> NFSE Nacional</h3></div>
         <div class="widget-content"><ul class="list-group">
             <li class="list-group-item"><a href="' . $l . '"><i class="fa fa-dashboard"></i> Dashboard</a></li>
-            <li class="list-group-item"><a href="' . $l . '&action=exportar"><i class="fa fa-download"></i> Exportar XML</a></li>
+            <li class="list-group-item"><a href="' . $l . '&action=exportar"><i class="fa fa-download"></i> Exportar</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=upload_cert"><i class="fa fa-certificate"></i> Certificado Digital</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=diagnostico"><i class="fa fa-stethoscope"></i> Diagnostico</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=log"><i class="fa fa-list"></i> Log de Emissoes</a></li>

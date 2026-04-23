@@ -364,7 +364,7 @@ class NfseController
     }
 
     // =========================================================================
-    // Exportar XML por periodo -> ZIP
+    // Exportar por periodo -> ZIP
     // =========================================================================
     public function exportar(): void
     {
@@ -393,7 +393,7 @@ class NfseController
         ?>
         <div class="panel panel-default">
             <div class="panel-heading">
-                <h3 class="panel-title"><i class="fa fa-download"></i> Exportar NFS-e em XML</h3>
+                <h3 class="panel-title"><i class="fa fa-download"></i> Exportar NFS-e</h3>
             </div>
             <div class="panel-body">
                 <p class="text-muted">
@@ -401,42 +401,44 @@ class NfseController
                     NFS-e emitidas no intervalo.
                 </p>
 
-                <form method="post" action="<?= $this->modulelink ?>&action=exportar">
+                <form method="post" action="<?= $this->modulelink ?>&action=exportar" id="form-exportar">
                     <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
                     <input type="hidden" name="exportar" value="1">
+                    <input type="hidden" name="data_inicio_val" id="data_inicio_val">
+                    <input type="hidden" name="data_fim_val"    id="data_fim_val">
+                    <input type="hidden" name="status_filtro_val" id="status_filtro_val">
 
                     <div class="row">
-                        <div class="col-sm-3">
+                        <div class="col-sm-4">
                             <div class="form-group">
                                 <label><i class="fa fa-calendar"></i> Data Inicial</label>
-                                <input type="date" name="data_inicio" class="form-control"
+                                <input type="date" name="data_inicio" id="data_inicio" class="form-control"
                                        value="<?= date('Y-m-01') ?>" required>
                             </div>
                         </div>
-                        <div class="col-sm-3">
+                        <div class="col-sm-4">
                             <div class="form-group">
                                 <label><i class="fa fa-calendar"></i> Data Final</label>
-                                <input type="date" name="data_fim" class="form-control"
+                                <input type="date" name="data_fim" id="data_fim" class="form-control"
                                        value="<?= date('Y-m-d') ?>" required>
                             </div>
                         </div>
-                        <div class="col-sm-3">
+                        <div class="col-sm-4">
                             <div class="form-group">
                                 <label><i class="fa fa-filter"></i> Status</label>
-                                <select name="status_filtro" class="form-control">
+                                <select name="status_filtro" id="status_filtro" class="form-control">
                                     <option value="emitida">Somente Emitidas</option>
                                     <option value="todos">Todos os status</option>
                                     <option value="cancelada">Somente Canceladas</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="col-sm-3">
-                            <div class="form-group">
-                                <label>&nbsp;</label>
-                                <button type="submit" class="btn btn-success btn-block">
-                                    <i class="fa fa-file-zip-o"></i> Baixar ZIP com XMLs
-                                </button>
-                            </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-12" style="margin-top: 5px;">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fa fa-file-zip-o"></i> Baixar XML
+                            </button>
                         </div>
                     </div>
                 </form>
@@ -872,10 +874,12 @@ class NfseController
                 <div style="margin-top:15px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
                         <strong><i class="fa fa-code"></i> XML da NFS-e</strong>
-                        <a href="<?= $this->modulelink ?>&action=download_xml&invoice_id=<?= $invoiceId ?>"
-                           class="btn btn-xs btn-default">
-                            <i class="fa fa-download"></i> Baixar XML
-                        </a>
+                        <div>
+                            <a href="<?= $this->modulelink ?>&action=download_xml&invoice_id=<?= $invoiceId ?>"
+                               class="btn btn-xs btn-default">
+                                <i class="fa fa-download"></i> Baixar XML
+                            </a>
+                        </div>
                     </div>
                     <pre style="max-height:500px;overflow:auto;font-size:11px;background:#f8f8f8;border:1px solid #ddd;padding:10px;border-radius:4px;"><?= $xmlFormatado ?></pre>
                 </div>
@@ -1079,7 +1083,7 @@ class NfseController
 
         $items = [
             ''                      => ['fa-dashboard',   'Dashboard'],
-            '&action=exportar'      => ['fa-download',    'Exportar XML'],
+            '&action=exportar'      => ['fa-download',    'Exportar'],
             '&action=upload_cert'   => ['fa-certificate', 'Certificado Digital'],
             '&action=log'           => ['fa-list',        'Log'],
             '&action=diagnostico'   => ['fa-stethoscope', 'Diagnostico'],

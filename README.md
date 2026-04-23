@@ -1,4 +1,4 @@
-# NFSE Nacional — Addon WHMCS
+# NFSE Nacional — Addon WHMCS v1.2
 
 Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 ICP-Brasil).
 
@@ -11,7 +11,7 @@ Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) dir
 - **Widget na fatura** — botões de emitir, ver e baixar XML diretamente na tela de edição de fatura no admin
 - **Configuração por produto** — código de serviço (LC 116), tributação municipal/nacional e NBS individualmente por produto WHMCS
 - **Diagnóstico de conectividade** — testa DNS, TCP 443 e HTTPS para os endpoints da Receita Federal
-- **Exportar XML** — baixa ZIP com XMLs de todas as notas de um período + índice CSV
+- **Exportar XML** — baixa ZIP com XMLs de todas as notas de um período
 - **Debug configurável** — salva arquivos `debug_*.xml/txt` apenas quando ativado (desative em produção)
 
 ---
