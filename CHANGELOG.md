@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2] — 2026-04-22
+
+### Novidades
+
+- Widget de emissão na fatura agora posicionado entre **Summary** e **Invoice Items** no WHMCS 9 (estratégia de inserção multi-layout aprimorada)
+
+### Remoções
+
+- Exportação de **PDF** removida — exportação mantida apenas como ZIP de XMLs
+- Removidos: `NfsePdfGenerator`, rotas `download_pdf` / `exportar_pdf` / `gerarZipPdf`, botões de PDF na UI e no widget
+
 ## [1.1] — 2026-03-30
 
 ### Novidades
