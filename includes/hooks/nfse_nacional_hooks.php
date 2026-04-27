@@ -223,6 +223,13 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             if (!inserted) {
                 $(".content-area, #main-body, .main-content, #contentarea, .content, .app-main__inner").first().prepend(box);
             }
+
+            $("#nfse-nacional-box").find("a[href*=download_pdf], a[href*=exportar_pdf], a[href*=downloadPdf], a[href*=exportarPdf]").remove();
+            $("#nfse-nacional-box .btn").filter(function() {
+                var text = $.trim($(this).text()).toUpperCase();
+                var title = $.trim($(this).attr("title") || "").toUpperCase();
+                return text === "PDF" || title.indexOf("PDF") !== -1;
+            }).remove();
         });
     '];
 });

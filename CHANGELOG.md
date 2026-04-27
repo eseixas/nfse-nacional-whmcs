@@ -1,15 +1,21 @@
 # Changelog
 
+## [1.3] — 2026-04-27
+
+### Remoções
+
+- Exportação de **PDF** removida em definitivo do addon; exportação mantida apenas como ZIP de XMLs
+- Removidas as últimas referências de release e pacote que ainda indicavam download de PDF
+
+### Correções
+
+- Versão do addon alinhada para `1.3` nos metadados e na documentação
+
 ## [1.2] — 2026-04-22
 
 ### Novidades
 
 - Widget de emissão na fatura agora posicionado entre **Summary** e **Invoice Items** no WHMCS 9 (estratégia de inserção multi-layout aprimorada)
-
-### Remoções
-
-- Exportação de **PDF** removida — exportação mantida apenas como ZIP de XMLs
-- Removidos: `NfsePdfGenerator`, rotas `download_pdf` / `exportar_pdf` / `gerarZipPdf`, botões de PDF na UI e no widget
 
 ## [1.1] — 2026-03-30
 

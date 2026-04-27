@@ -231,7 +231,18 @@ class NfseController
                 </tbody>
             </table>
         </div>
-        <script>$(function(){ $('[data-toggle="tooltip"]').tooltip(); });</script>
+        <script>
+        $(function(){
+            $('[data-toggle="tooltip"]').tooltip();
+            var pdfLinks = 'a[href*="action=download_pdf"], a[href*="action=exportar_pdf"], a[href*="download_pdf"], a[href*="exportar_pdf"]';
+            $(pdfLinks).remove();
+            $('.panel:contains("Ultimas Emissoes") .btn').filter(function() {
+                var text = $.trim($(this).text()).toUpperCase();
+                var title = $.trim($(this).attr('title') || '').toUpperCase();
+                return text === 'PDF' || title.indexOf('PDF') !== -1;
+            }).remove();
+        });
+        </script>
         <?php
     }
 
