@@ -1,0 +1,38 @@
+{
+    "schema": "1.0",
+    "type": "whmcs-addons",
+    "name": "nfse_nacional",
+    "version": "1.3",
+    "license": "MIT",
+    "category": "addon",
+    "description": {
+        "name": "Emissor de NFS-e Nacional",
+        "tagline": "Emissor de NFS-e Nacional",
+        "long": "Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) 
+        diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 
+        ICP-Brasil).","features": [
+            "Emissão automática ao criar ou pagar uma fatura, ou **manual** pelo dashboard",
+            "Dashboard com estatísticas (emitidas, pendentes, erros) e listagem das últimas notas",
+            "Widget na fatura — botões de emitir, ver e baixar XML diretamente na tela de edição de fatura no admin",
+            "Configuração por produto — código de serviço (LC 116), tributação municipal/nacional e NBS individualmente por produto WHMCS",
+            "Diagnóstico de conectividade — testa DNS, TCP 443 e HTTPS para os endpoints da Receita Federal",
+            "Exportar XML — baixa ZIP com XMLs de todas as notas de um período",
+            "Debug configurável — salva arquivos debug_*.xml/txt apenas quando ativado (desative em produção)"
+        ]
+    },
+    "logo": {
+        "filename": "logo.png"
+    },
+    "support": {
+        "homepage": "https://www.seixastecnologia.com.br",
+        "email": "contato@seixastecnologia.com.br",
+        "learn_more": "https://github.com/eseixas/nfse-nacional-whmcs",
+        "support_url": "https://github.com/eseixas/nfse-nacional-whmcs/issues"
+    },
+    "authors": [
+        {
+            "name": "Seixas Tecnologia",
+            "homepage": "https://www.seixastecnologia.com.br"
+        }
+    ]
+}

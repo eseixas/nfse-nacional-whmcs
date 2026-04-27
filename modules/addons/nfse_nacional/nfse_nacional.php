@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 2.0.0
+ * @version 1.3.0
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.2',
+        'version'     => '1.3',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -215,7 +215,7 @@ function nfse_nacional_activate()
             file_put_contents($certDir . '/index.php', "<?php // silence");
         }
 
-        return ['status' => 'success', 'description' => 'Addon NFS-e BH v2.0 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.3 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }
