@@ -8,9 +8,8 @@
     "description": {
         "name": "Emissor de NFS-e Nacional",
         "tagline": "Emissor de NFS-e Nacional",
-        "long": "Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) 
-        diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 
-        ICP-Brasil).","features": [
+        "long": "Addon para emissão de **NFS-e Padrão Nacional** diretamente pelo WHMCS.",
+        "features": [
             "Emissão automática ao criar ou pagar uma fatura, ou **manual** pelo dashboard",
             "Dashboard com estatísticas (emitidas, pendentes, erros) e listagem das últimas notas",
             "Widget na fatura — botões de emitir, ver e baixar XML diretamente na tela de edição de fatura no admin",
