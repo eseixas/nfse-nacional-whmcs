@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.3.0
+ * @version 1.4.0
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.3',
+        'version'     => '1.4',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -207,6 +207,15 @@ function nfse_nacional_activate()
             });
         }
 
+        // Tabela de configuracao de modo de emissao por cliente
+        if (!Capsule::schema()->hasTable('mod_nfse_nacional_clientes')) {
+            Capsule::schema()->create('mod_nfse_nacional_clientes', function ($t) {
+                $t->integer('client_id')->unsigned()->primary();
+                $t->string('emissao_modo', 20)->default('default');
+                $t->timestamp('updated_at')->nullable();
+            });
+        }
+
         // Cria diretorio seguro para certificados
         $certDir = __DIR__ . '/certs';
         if (!is_dir($certDir)) {
@@ -215,7 +224,7 @@ function nfse_nacional_activate()
             file_put_contents($certDir . '/index.php', "<?php // silence");
         }
 
-        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.3 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.4 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }
@@ -312,6 +321,17 @@ function nfse_nacional_output($vars)
         }
     } catch (Exception $ignored) {}
 
+    // Migration: tabela de modo de emissao por cliente
+    try {
+        if (!Capsule::schema()->hasTable('mod_nfse_nacional_clientes')) {
+            Capsule::schema()->create('mod_nfse_nacional_clientes', function ($t) {
+                $t->integer('client_id')->unsigned()->primary();
+                $t->string('emissao_modo', 20)->default('default');
+                $t->timestamp('updated_at')->nullable();
+            });
+        }
+    } catch (Exception $ignored) {}
+
     // Migration: tabela de log
     try {
         if (!Capsule::schema()->hasTable('mod_nfse_nacional_log')) {
@@ -340,6 +360,7 @@ function nfse_nacional_output($vars)
         case 'ver_nfse':     $ctrl->verNfse();      break;
         case 'download_xml': $ctrl->downloadXml();  break;
         case 'produtos':     $ctrl->produtos();     break;
+        case 'clientes':     $ctrl->clientes();     break;
         default:             $ctrl->dashboard();    break;
     }
 }
@@ -353,6 +374,7 @@ function nfse_nacional_sidebar($vars)
             <li class="list-group-item"><a href="' . $l . '&action=exportar"><i class="fa fa-download"></i> Exportar</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=upload_cert"><i class="fa fa-certificate"></i> Certificado Digital</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=diagnostico"><i class="fa fa-stethoscope"></i> Diagnostico</a></li>
+            <li class="list-group-item"><a href="' . $l . '&action=clientes"><i class="fa fa-users"></i> Clientes</a></li>
             <li class="list-group-item"><a href="' . $l . '&action=log"><i class="fa fa-list"></i> Log de Emissoes</a></li>
         </ul></div></div>';
 }

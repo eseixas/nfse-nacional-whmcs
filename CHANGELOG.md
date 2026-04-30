@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4] — 2026-04-30
+
+### Revisão de segurança
+
+- Revisão completa do código sem vulnerabilidades identificadas (SQL injection, XSS, RCE)
+- Metadados do pacote (`whmcs.json`) e versão alinhados para `1.4`
+
 ## [1.3] — 2026-04-27
 
 ### Remoções
