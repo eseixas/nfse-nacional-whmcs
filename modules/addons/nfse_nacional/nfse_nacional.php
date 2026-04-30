@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.4.0
+ * @version 1.6.0
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.4',
+        'version'     => '1.6',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -169,92 +169,128 @@ function nfse_nacional_config()
 
 // --- Ativacaoo -----------------------------------------------------------------
 
+function nfse_nacional_ensure_schema()
+{
+    if (!Capsule::schema()->hasTable('mod_nfse_nacional')) {
+        Capsule::schema()->create('mod_nfse_nacional', function ($t) {
+            $t->increments('id');
+            $t->integer('invoice_id')->unsigned()->unique();
+            $t->integer('client_id')->unsigned();
+            $t->string('numero_nfse', 30)->nullable();
+            $t->string('n_dfse', 20)->nullable();
+            $t->unsignedInteger('n_dps')->nullable();
+            $t->string('codigo_verificacao', 60)->nullable();
+            $t->decimal('valor', 10, 2)->default(0);
+            $t->decimal('valor_iss', 10, 2)->default(0);
+            $t->enum('status', ['pendente', 'emitida', 'cancelada', 'erro'])->default('pendente');
+            $t->text('xml_enviado')->nullable();
+            $t->text('xml_retorno')->nullable();
+            $t->text('mensagem_erro')->nullable();
+            $t->timestamp('emitida_em')->nullable();
+            $t->timestamps();
+        });
+    } else {
+        $cols = Capsule::schema()->getColumnListing('mod_nfse_nacional');
+
+        $missing = function (string $column) use ($cols): bool {
+            return !in_array($column, $cols, true);
+        };
+
+        if ($missing('valor_iss')) {
+            Capsule::schema()->table('mod_nfse_nacional', function ($t) {
+                $t->decimal('valor_iss', 10, 2)->default(0)->after('valor');
+            });
+        }
+        if ($missing('codigo_verificacao')) {
+            Capsule::schema()->table('mod_nfse_nacional', function ($t) {
+                $t->string('codigo_verificacao', 60)->nullable()->after('numero_nfse');
+            });
+        }
+        if ($missing('mensagem_erro')) {
+            Capsule::schema()->table('mod_nfse_nacional', function ($t) {
+                $t->text('mensagem_erro')->nullable()->after('xml_retorno');
+            });
+        }
+        if ($missing('n_dfse')) {
+            Capsule::schema()->table('mod_nfse_nacional', function ($t) {
+                $t->string('n_dfse', 20)->nullable()->after('numero_nfse');
+            });
+        }
+        if ($missing('n_dps')) {
+            Capsule::schema()->table('mod_nfse_nacional', function ($t) {
+                $t->unsignedInteger('n_dps')->nullable()->after('n_dfse');
+            });
+        }
+    }
+
+    if (!Capsule::schema()->hasTable('mod_nfse_nacional_produtos')) {
+        Capsule::schema()->create('mod_nfse_nacional_produtos', function ($t) {
+            $t->increments('id');
+            $t->integer('product_id')->unsigned()->unique();
+            $t->string('item_lista_servico', 10)->nullable();
+            $t->string('codigo_tributacao_municipio', 20)->nullable();
+            $t->string('codigo_tributacao_nacional', 20)->nullable();
+            $t->string('codigo_nbs', 20)->nullable();
+            $t->timestamps();
+        });
+    }
+
+    if (!Capsule::schema()->hasTable('mod_nfse_nacional_log')) {
+        Capsule::schema()->create('mod_nfse_nacional_log', function ($t) {
+            $t->increments('id');
+            $t->integer('invoice_id')->unsigned()->nullable();
+            $t->enum('tipo', ['info', 'success', 'error', 'warning'])->default('info');
+            $t->string('acao', 100);
+            $t->text('mensagem');
+            $t->text('dados')->nullable();
+            $t->timestamps();
+        });
+    }
+
+    if (!Capsule::schema()->hasTable('mod_nfse_nacional_clientes')) {
+        Capsule::schema()->create('mod_nfse_nacional_clientes', function ($t) {
+            $t->integer('client_id')->unsigned()->primary();
+            $t->string('emissao_modo', 20)->default('default');
+            $t->timestamp('updated_at')->nullable();
+        });
+    }
+
+    $certDir = __DIR__ . '/certs';
+    if (!is_dir($certDir)) {
+        mkdir($certDir, 0700, true);
+    }
+    if (is_dir($certDir)) {
+        file_put_contents($certDir . '/.htaccess', "Require all denied\nDeny from all\n");
+        file_put_contents($certDir . '/index.php', "<?php // silence");
+    }
+}
+
+function nfse_nacional_backfill_ndps()
+{
+    try {
+        $semNdps = Capsule::table('mod_nfse_nacional')
+            ->whereNull('n_dps')
+            ->whereNotNull('xml_enviado')
+            ->get(['id', 'xml_enviado']);
+
+        foreach ($semNdps as $row) {
+            if (preg_match('/<nDPS>(\d+)<\/nDPS>/', $row->xml_enviado, $mx)) {
+                Capsule::table('mod_nfse_nacional')
+                    ->where('id', $row->id)
+                    ->update(['n_dps' => (int)$mx[1]]);
+            }
+        }
+    } catch (\Exception $ignored) {
+        // A migracao de compatibilidade nao deve bloquear a interface.
+    }
+}
+
 function nfse_nacional_activate()
 {
     try {
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional')) {
-            Capsule::schema()->create('mod_nfse_nacional', function ($t) {
-                $t->increments('id');
-                $t->integer('invoice_id')->unsigned()->unique();
-                $t->integer('client_id')->unsigned();
-                $t->string('numero_nfse', 30)->nullable();
-                $t->string('n_dfse', 20)->nullable();
-                $t->unsignedInteger('n_dps')->nullable();
-                $t->string('codigo_verificacao', 60)->nullable();
-                $t->decimal('valor', 10, 2)->default(0);
-                $t->decimal('valor_iss', 10, 2)->default(0);
-                $t->enum('status', ['pendente', 'emitida', 'cancelada', 'erro'])->default('pendente');
-                $t->text('xml_enviado')->nullable();
-                $t->text('xml_retorno')->nullable();
-                $t->text('mensagem_erro')->nullable();
-                $t->timestamp('emitida_em')->nullable();
-                $t->timestamps();
-            });
-        } else {
-            // Migracaoo: adiciona colunas que podem nao existir em instalacoeses anteriores
-            $cols = Capsule::schema()->getColumnListing('mod_nfse_nacional');
-            if (!in_array('valor_iss', $cols)) {
-                Capsule::schema()->table('mod_nfse_nacional', function ($t) {
-                    $t->decimal('valor_iss', 10, 2)->default(0)->after('valor');
-                });
-            }
-            if (!in_array('codigo_verificacao', $cols)) {
-                Capsule::schema()->table('mod_nfse_nacional', function ($t) {
-                    $t->string('codigo_verificacao', 60)->nullable()->after('numero_nfse');
-                });
-            } else {
-                // Aumenta tamanho para 60 se ainda for 30 (chave de acesso tem ate 53 chars)
-                try {
-                    Capsule::statement('ALTER TABLE mod_nfse_nacional MODIFY COLUMN codigo_verificacao VARCHAR(60)');
-                } catch (Exception $e) {
-                    // Ignora se ja tiver o tamanho correto
-                }
-            }
-        }
+        nfse_nacional_ensure_schema();
 
-        // Tabela de configuracao de servicos por produto WHMCS
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_produtos')) {
-            Capsule::schema()->create('mod_nfse_nacional_produtos', function ($t) {
-                $t->increments('id');
-                $t->integer('product_id')->unsigned()->unique();
-                $t->string('item_lista_servico', 10)->nullable();
-                $t->string('codigo_tributacao_municipio', 20)->nullable();
-                $t->string('codigo_tributacao_nacional', 20)->nullable();
-                $t->string('codigo_nbs', 20)->nullable();
-                $t->timestamps();
-            });
-        }
-
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_log')) {
-            Capsule::schema()->create('mod_nfse_nacional_log', function ($t) {
-                $t->increments('id');
-                $t->integer('invoice_id')->unsigned()->nullable();
-                $t->enum('tipo', ['info', 'success', 'error', 'warning'])->default('info');
-                $t->string('acao', 100);
-                $t->text('mensagem');
-                $t->text('dados')->nullable();
-                $t->timestamps();
-            });
-        }
-
-        // Tabela de configuracao de modo de emissao por cliente
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_clientes')) {
-            Capsule::schema()->create('mod_nfse_nacional_clientes', function ($t) {
-                $t->integer('client_id')->unsigned()->primary();
-                $t->string('emissao_modo', 20)->default('default');
-                $t->timestamp('updated_at')->nullable();
-            });
-        }
-
-        // Cria diretorio seguro para certificados
-        $certDir = __DIR__ . '/certs';
-        if (!is_dir($certDir)) {
-            mkdir($certDir, 0700, true);
-            file_put_contents($certDir . '/.htaccess', "Deny from all\n");
-            file_put_contents($certDir . '/index.php', "<?php // silence");
-        }
-
-        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.4 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.6 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }
@@ -269,109 +305,12 @@ function nfse_nacional_deactivate()
 
 function nfse_nacional_output($vars)
 {
-    // Migration automatica: roda em toda requisicao para garantir schema correto
-
-    // Cria tabela principal se nao existir (independe do activate)
     try {
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional')) {
-            Capsule::schema()->create('mod_nfse_nacional', function ($t) {
-                $t->increments('id');
-                $t->integer('invoice_id')->unsigned()->unique();
-                $t->integer('client_id')->unsigned();
-                $t->string('numero_nfse', 30)->nullable();
-                $t->string('n_dfse', 20)->nullable();
-                $t->unsignedInteger('n_dps')->nullable();
-                $t->string('codigo_verificacao', 60)->nullable();
-                $t->decimal('valor', 10, 2)->default(0);
-                $t->decimal('valor_iss', 10, 2)->default(0);
-                $t->enum('status', ['pendente', 'emitida', 'cancelada', 'erro'])->default('pendente');
-                $t->text('xml_enviado')->nullable();
-                $t->text('xml_retorno')->nullable();
-                $t->text('mensagem_erro')->nullable();
-                $t->timestamp('emitida_em')->nullable();
-                $t->timestamps();
-            });
-        }
-    } catch (Exception $ignored) {}
-
-    try {
-        $cols = Capsule::schema()->getColumnListing('mod_nfse_nacional');
-        if (!in_array('codigo_verificacao', $cols)) {
-            Capsule::schema()->table('mod_nfse_nacional', function($t) {
-                $t->string('codigo_verificacao', 60)->nullable()->after('numero_nfse');
-            });
-        }
-        if (!in_array('mensagem_erro', $cols)) {
-            Capsule::schema()->table('mod_nfse_nacional', function($t) {
-                $t->text('mensagem_erro')->nullable()->after('xml_retorno');
-            });
-        }
-        if (!in_array('n_dfse', $cols)) {
-            Capsule::schema()->table('mod_nfse_nacional', function($t) {
-                $t->string('n_dfse', 20)->nullable()->after('numero_nfse');
-            });
-        }
-        if (!in_array('n_dps', $cols)) {
-            Capsule::schema()->table('mod_nfse_nacional', function($t) {
-                $t->unsignedInteger('n_dps')->nullable()->after('n_dfse');
-            });
-        }
-    } catch (Exception $ignored) {}
-
-    // Popula n_dps retroativamente para registros existentes (uma vez)
-    try {
-        $sem_ndps = Capsule::table('mod_nfse_nacional')
-            ->whereNull('n_dps')
-            ->whereNotNull('xml_enviado')
-            ->get(['id', 'xml_enviado']);
-        foreach ($sem_ndps as $row) {
-            if (preg_match('/<nDPS>(\d+)<\/nDPS>/', $row->xml_enviado, $mx)) {
-                Capsule::table('mod_nfse_nacional')->where('id', $row->id)
-                    ->update(['n_dps' => (int)$mx[1]]);
-            }
-        }
-    } catch (Exception $ignored) {}
-
-    // Migration: tabela de configuracao por produto (criada aqui para nao depender do activate)
-    try {
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_produtos')) {
-            Capsule::schema()->create('mod_nfse_nacional_produtos', function ($t) {
-                $t->increments('id');
-                $t->integer('product_id')->unsigned()->unique();
-                $t->string('item_lista_servico', 10)->nullable();
-                $t->string('codigo_tributacao_municipio', 20)->nullable();
-                $t->string('codigo_tributacao_nacional', 20)->nullable();
-                $t->string('codigo_nbs', 20)->nullable();
-                $t->timestamps();
-            });
-        }
-    } catch (Exception $ignored) {}
-
-    // Migration: tabela de modo de emissao por cliente
-    try {
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_clientes')) {
-            Capsule::schema()->create('mod_nfse_nacional_clientes', function ($t) {
-                $t->integer('client_id')->unsigned()->primary();
-                $t->string('emissao_modo', 20)->default('default');
-                $t->timestamp('updated_at')->nullable();
-            });
-        }
-    } catch (Exception $ignored) {}
-
-    // Migration: tabela de log
-    try {
-        if (!Capsule::schema()->hasTable('mod_nfse_nacional_log')) {
-            Capsule::schema()->create('mod_nfse_nacional_log', function ($t) {
-                $t->increments('id');
-                $t->integer('invoice_id')->unsigned()->nullable();
-                $t->enum('tipo', ['info', 'success', 'error', 'warning'])->default('info');
-                $t->string('acao', 100);
-                $t->text('mensagem');
-                $t->text('dados')->nullable();
-                $t->timestamps();
-            });
-        }
-    } catch (Exception $ignored) {}
+        nfse_nacional_ensure_schema();
+        nfse_nacional_backfill_ndps();
+    } catch (\Exception $ignored) {
+        // O controller exibira erros de banco quando uma acao depender do schema.
+    }
 
     require_once __DIR__ . '/lib/NfseController.php';
     $action = isset($_GET['action']) ? preg_replace('/[^a-z_]/', '', $_GET['action']) : 'dashboard';

@@ -80,6 +80,7 @@ class CertManager
             'valid_to'   => date('Y-m-d', $validTo),
             'subject'    => $certInfo['subject']['CN'] ?? '',
             'password'   => $this->encryptPassword($password),
+            'password_encryption' => function_exists('encrypt') ? 'whmcs' : 'legacy',
         ];
         file_put_contents($this->metaFile, json_encode($meta, JSON_PRETTY_PRINT));
         chmod($this->metaFile, 0600);
@@ -170,12 +171,12 @@ class CertManager
         if (file_exists($this->metaFile)) unlink($this->metaFile);
     }
 
-    /**
-     * Criptografia simples da senha (usando chave derivada do hostname + caminho)
-     * Para producaoo com dados muito sens??veis, considere usar libsodium
-     */
     private function encryptPassword(string $password): string
     {
+        if (function_exists('encrypt')) {
+            return 'whmcs:' . encrypt($password);
+        }
+
         $key = hash('sha256', php_uname('n') . __DIR__, true);
         $iv  = random_bytes(16);
         $enc = openssl_encrypt($password, 'AES-256-CBC', $key, 0, $iv);
@@ -184,6 +185,18 @@ class CertManager
 
     private function decryptPassword(string $encrypted): string
     {
+        if (strpos($encrypted, 'whmcs:') === 0) {
+            $payload = substr($encrypted, 6);
+            return function_exists('decrypt') ? (decrypt($payload) ?: '') : '';
+        }
+
+        if (function_exists('decrypt')) {
+            $plain = decrypt($encrypted);
+            if ($plain !== false && $plain !== '') {
+                return $plain;
+            }
+        }
+
         $key   = hash('sha256', php_uname('n') . __DIR__, true);
         $parts = explode('::', base64_decode($encrypted), 2);
         if (count($parts) !== 2) return '';

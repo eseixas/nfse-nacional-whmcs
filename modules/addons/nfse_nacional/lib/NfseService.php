@@ -79,9 +79,11 @@ class NfseService
 
     // --- Emissao -------------------------------------------------------------
 
-    public function emitirParaFatura($invoiceId)
+    public function emitirParaFatura($invoiceId, array $options = array())
     {
         try {
+            $allowUnpaid = !empty($options['allow_unpaid']);
+
             // Verifica se ja existe NFS-e emitida
             $existing = Capsule::table('mod_nfse_nacional')
                 ->where('invoice_id', $invoiceId)
@@ -103,8 +105,9 @@ class NfseService
                 return array('success' => false, 'message' => 'Fatura #' . $invoiceId . ' nao encontrada.');
             }
 
-            if ($invoice['status'] !== 'Paid') {
+            if (!$allowUnpaid && $invoice['status'] !== 'Paid') {
                 return array('success' => false,
+                    'blocked_by_status' => true,
                     'message' => 'A fatura #' . $invoiceId . ' nao esta paga (status: ' . $invoice['status'] . ').');
             }
 

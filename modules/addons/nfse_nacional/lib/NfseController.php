@@ -110,7 +110,7 @@ class NfseController
             <strong>Prestador:</strong> <?= htmlspecialchars($this->config['razao_social'] ?? '') ?>
             &nbsp;|&nbsp; CNPJ: <?= $this->formatCnpj($this->config['cnpj']) ?>
             &nbsp;|&nbsp; IM: <?= htmlspecialchars($this->config['im'] ?? '') ?>
-            &nbsp;|&nbsp; ISS: <?= $this->config['aliquota_iss'] ?? '2.00' ?>%
+            &nbsp;|&nbsp; ISS: <?= htmlspecialchars((string)($this->config['aliquota_iss'] ?? '2.00')) ?>%
             &nbsp;|&nbsp; <a href="<?= $this->getConfigUrl() ?>"><i class="fa fa-cog"></i> Configuracoes</a>
         </p>
         <?php endif; ?>
@@ -166,7 +166,7 @@ class NfseController
                     <td><a href="invoices.php?action=edit&id=<?= $inv->id ?>" target="_blank">#<?= $inv->id ?></a></td>
                     <td><?= $inv->userid ?></td>
                     <td>R$ <?= number_format($inv->total, 2, ',', '.') ?></td>
-                    <td><?= $inv->datepaid ?></td>
+                    <td><?= htmlspecialchars((string)$inv->datepaid) ?></td>
                     <td>
                         <form method="post" action="<?= $this->modulelink ?>&action=emitir" style="display:inline">
                             <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
@@ -194,10 +194,10 @@ class NfseController
                     <td><a href="invoices.php?action=edit&id=<?= $n->invoice_id ?>" target="_blank">#<?= $n->invoice_id ?></a></td>
                     <td><?= $n->client_id ?></td>
                     <td>R$ <?= number_format($n->valor, 2, ',', '.') ?></td>
-                    <td><strong><?= $n->n_dps ?: '-' ?></strong></td>
-                    <td><?= $n->codigo_verificacao ?: '-' ?></td>
+                    <td><strong><?= htmlspecialchars((string)($n->n_dps ?: '-')) ?></strong></td>
+                    <td><?= htmlspecialchars((string)($n->codigo_verificacao ?: '-')) ?></td>
                     <td><?= $this->statusBadge($n->status) ?></td>
-                    <td><?= $n->emitida_em ?: '-' ?></td>
+                    <td><?= htmlspecialchars((string)($n->emitida_em ?: '-')) ?></td>
                     <td>
                         <?php if ($n->status === 'emitida'): ?>
                         <a href="<?= $this->modulelink ?>&action=ver_nfse&invoice_id=<?= $n->invoice_id ?>"
@@ -301,8 +301,8 @@ class NfseController
                     <table class="table table-condensed" style="margin:10px 0 0 0;max-width:500px;">
                         <tr><th>Arquivo original:</th><td><?= htmlspecialchars($meta['filename'] ?? '-') ?></td></tr>
                         <tr><th>Titular:</th><td><?= htmlspecialchars($meta['subject'] ?? '-') ?></td></tr>
-                        <tr><th>Valido ate:</th><td><?= $meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-' ?></td></tr>
-                        <tr><th>Enviado em:</th><td><?= $meta['uploaded_at'] ?? '-' ?></td></tr>
+                        <tr><th>Valido ate:</th><td><?= htmlspecialchars($meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-') ?></td></tr>
+                        <tr><th>Enviado em:</th><td><?= htmlspecialchars((string)($meta['uploaded_at'] ?? '-')) ?></td></tr>
                     </table>
                     <form method="post" action="<?= $this->modulelink ?>&action=upload_cert" style="margin-top:10px"
                           onsubmit="return confirm('Confirma a remocaoo do certificado?')">
@@ -498,7 +498,7 @@ class NfseController
                         <td><?= htmlspecialchars($r->codigo_verificacao ?: '-') ?></td>
                         <td>R$ <?= number_format($r->valor, 2, ',', '.') ?></td>
                         <td>R$ <?= number_format($r->valor_iss ?? 0, 2, ',', '.') ?></td>
-                        <td><?= $r->emitida_em ?></td>
+                        <td><?= htmlspecialchars((string)$r->emitida_em) ?></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -535,6 +535,23 @@ class NfseController
             $this->flash('Datas invalidas.', 'danger');
             $this->exportar();
             return;
+        }
+        [$anoInicio, $mesInicio, $diaInicio] = array_map('intval', explode('-', $dataInicio));
+        [$anoFim, $mesFim, $diaFim] = array_map('intval', explode('-', $dataFim));
+        if (!checkdate($mesInicio, $diaInicio, $anoInicio) || !checkdate($mesFim, $diaFim, $anoFim)) {
+            $this->renderNav();
+            $this->flash('Datas invalidas.', 'danger');
+            $this->exportar();
+            return;
+        }
+        if ($dataInicio > $dataFim) {
+            $this->renderNav();
+            $this->flash('A data inicial nao pode ser maior que a data final.', 'danger');
+            $this->exportar();
+            return;
+        }
+        if (!in_array($statusFiltro, ['emitida', 'cancelada', 'todos'], true)) {
+            $statusFiltro = 'emitida';
         }
 
         // Busca registros
@@ -666,7 +683,7 @@ class NfseController
                 <tbody>
                 <?php foreach ($logs as $l): ?>
                 <tr>
-                    <td><?= $l->created_at ?></td>
+                    <td><?= htmlspecialchars((string)$l->created_at) ?></td>
                     <td><?= $this->logBadge($l->tipo) ?></td>
                     <td><?= htmlspecialchars($l->acao) ?></td>
                     <td><?= $l->invoice_id ? '#' . $l->invoice_id : '-' ?></td>
@@ -738,7 +755,7 @@ class NfseController
                             <?php $r = $result[$k]; ?>
                             <tr>
                                 <td><?= $ok($r['ok']) ?></td>
-                                <td><code style="font-size:10px"><?= $r['host'] ?></code><br>
+                                <td><code style="font-size:10px"><?= htmlspecialchars((string)$r['host']) ?></code><br>
                                     <small class="text-muted"><?= htmlspecialchars($r['msg']) ?></small></td>
                             </tr>
                         <?php endforeach; ?>
@@ -959,7 +976,8 @@ class NfseController
             $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
         }
 
-        $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($record->numero_nfse ?? '0') . '.xml';
+        $numeroNfse = preg_replace('/[^A-Za-z0-9_.-]/', '', (string)($record->numero_nfse ?? '0'));
+        $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($numeroNfse ?: '0') . '.xml';
 
         header('Content-Type: application/xml; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $nome . '"');

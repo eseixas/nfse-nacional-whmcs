@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6] — 2026-04-30
+
+### Correções
+
+- **Modo ao criar fatura** — `InvoiceCreation` agora emite mesmo quando a fatura ainda nao esta paga; emissão manual e `InvoicePaid` continuam exigindo fatura `Paid`
+- **Schema centralizado** — criação/migração de tabelas consolidada em uma função compartilhada por `activate()` e pela interface do addon
+- **Certificado** — senha do `.pfx` passa a usar `encrypt()`/`decrypt()` do WHMCS quando disponível, preservando leitura do formato legado
+- **Higiene de release** — arquivos texto normalizados para LF e `.gitattributes` adicionado para evitar diffs ruidosos por CRLF
+- **Segurança admin** — validação de filtros de exportação reforçada e escapes HTML adicionados em saídas do dashboard, widget e logs
+- **Licença** — manifesto `whmcs.json` alinhado para GPL-3.0
+
 ## [1.5] — 2026-04-30
 
 ### Correções
