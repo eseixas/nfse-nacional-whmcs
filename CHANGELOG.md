@@ -2,10 +2,16 @@
 
 ## [1.4] — 2026-04-30
 
-### Revisão de segurança
+### Correções
 
-- Revisão completa do código sem vulnerabilidades identificadas (SQL injection, XSS, RCE)
-- Metadados do pacote (`whmcs.json`) e versão alinhados para `1.4`
+- **Schema** — `activate()` agora cria `n_dps` e `n_dfse` na tabela principal; emissão automática antes da primeira visita ao addon não falha mais com *unknown column*
+- **Config XML** — `NfseXmlBuilder` corrigido para ler as chaves corretas do config do addon: `optante_simples` (era `op_simples`) e `regime_tributario` (era `reg_ap_trib_sn`) e `codigo_tributacao_municipio` (era `c_trib_mun`); valores do admin agora são efetivamente usados no XML
+- **CSRF** — formulário de Serviços/Produtos agora inclui e valida token CSRF
+- **Race condition DPS** — `nextDpsNumber()` usa `SELECT … FOR UPDATE` dentro de transação; emissões simultâneas não geram mais o mesmo número de DPS
+- **Debug seguro** — arquivos de debug movidos para subdiretório `debug/` protegido com `.htaccess`; não ficam mais expostos na raiz do addon
+- **WHMCS guard** — `NfseController`, `CertManager` e `NfseDiagnostico` agora recusam acesso direto via HTTP
+- **Migration** — `ALTER TABLE MODIFY COLUMN` removido da execução em toda requisição; schema já é criado corretamente no `activate()` e nas migrations iniciais
+- **ViaCEP** — timeout reduzido de 5s para 3s
 
 ## [1.3] — 2026-04-27
 

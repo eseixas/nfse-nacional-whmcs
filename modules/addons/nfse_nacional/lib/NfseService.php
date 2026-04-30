@@ -39,6 +39,17 @@ class NfseService
         return !empty($this->config['debug_ativo']);
     }
 
+    private function debugDir(): string
+    {
+        $dir = __DIR__ . '/../debug';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0750, true);
+            file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");
+            file_put_contents($dir . '/index.php', '<?php // silence');
+        }
+        return $dir;
+    }
+
     private function debugWrite($path, $content): void
     {
         if ($this->debugEnabled()) {
@@ -170,7 +181,7 @@ class NfseService
             libxml_clear_errors();
 
             // Grava o XML para diagnostico (remova em producao)
-            $debugPath = __DIR__ . '/../debug_dps_' . $invoiceId . '.xml';
+            $debugPath = $this->debugDir() . '/debug_dps_' . $invoiceId . '.xml';
             $this->debugWrite($debugPath, $xmlAssinado);
 
             // Envia para a API NFSe Nacional
@@ -342,7 +353,7 @@ class NfseService
                 }
             }
 
-            $debugGet = __DIR__ . '/../debug_get_nfse_' . $invoiceId . '.txt';
+            $debugGet = $this->debugDir() . '/debug_get_nfse_' . $invoiceId . '.txt';
             $this->debugWrite($debugGet, "GET /nfse/{$chaveUrl}\n" .
                 "success: " . ($getResp['success'] ? 'true' : 'false') . "\n" .
                 "error: " . ($getResp['error'] ?? 'nenhum') . "\n" .
@@ -389,7 +400,7 @@ class NfseService
             $xmlAssinado = $signer->signCancelamento($xmlCancel);
 
             // Debug: salva XML de cancelamento para inspecao
-            $debugCancel = __DIR__ . '/../debug_cancel_' . $invoiceId . '.xml';
+            $debugCancel = $this->debugDir() . '/debug_cancel_' . $invoiceId . '.xml';
             $this->debugWrite($debugCancel, $xmlAssinado);
 
             // Debug: salva info do request (URL e ambiente)
@@ -400,7 +411,7 @@ class NfseService
             $baseUrl   = ($ambiente === 'producao')
                 ? 'https://sefin.nfse.gov.br/SefinNacional/'
                 : 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/';
-            $debugUrl  = __DIR__ . '/../debug_cancel_url_' . $invoiceId . '.txt';
+            $debugUrl  = $this->debugDir() . '/debug_cancel_url_' . $invoiceId . '.txt';
             $this->debugWrite($debugUrl, "Ambiente: {$ambiente}\n" .
                 "URL: {$baseUrl}nfse/{$chaveUrl}/eventos\n" .
                 "chaveAcesso original: {$chaveAcesso}\n" .
@@ -469,34 +480,16 @@ class NfseService
         return $client;
     }
 
-    private function nextDpsNumber()
+    private function nextDpsNumber(): int
     {
-        // Offset configuravel: numero minimo da serie DPS deste addon
-        $offset = (int)($this->config['ndps_offset'] ?? 1);
-        if ($offset < 1) {
-            $offset = 1;
-        }
+        $offset = max(1, (int)($this->config['ndps_offset'] ?? 1));
 
-        // Usa coluna n_dps dedicada (adicionada pela migration) para consulta rapida e confiavel
-        $maxNdps = 0;
-        try {
-            $max = Capsule::table('mod_nfse_nacional')->max('n_dps');
-            $maxNdps = (int)$max;
-        } catch (Exception $e) {
-            // Fallback: extrai do XML (para instancias sem a coluna ainda)
-            $rows = Capsule::table('mod_nfse_nacional')
-                ->whereNotNull('xml_enviado')
-                ->pluck('xml_enviado');
-            foreach ($rows as $xml) {
-                if (preg_match('/<nDPS>(\d+)<\/nDPS>/', $xml, $m)) {
-                    $n = (int)$m[1];
-                    if ($n > $maxNdps) { $maxNdps = $n; }
-                }
-            }
-        }
-
-        // Proximo numero = max entre: (offset configurado), (ultimo emitido + 1)
-        return max($offset, $maxNdps + 1);
+        return (int) Capsule::transaction(function () use ($offset) {
+            $max = Capsule::table('mod_nfse_nacional')
+                ->lockForUpdate()
+                ->max('n_dps');
+            return max($offset, (int)$max + 1);
+        });
     }
 
     private function addNoteToInvoice($invoiceId, $numeroNfse)

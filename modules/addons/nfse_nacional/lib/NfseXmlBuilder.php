@@ -56,8 +56,8 @@ class NfseXmlBuilder
         // Tributos
         $vServ      = number_format((float)$invoice['total'], 2, '.', '');
         $pTotTribSN = number_format((float)($this->config['perc_trib_sn'] ?? 6), 2, '.', '');
-        $opSimpNac  = $this->dropdownVal($this->config['op_simples']       ?? '3');
-        $regApTrib  = $this->dropdownVal($this->config['reg_ap_trib_sn']   ?? '1');
+        $opSimpNac  = $this->dropdownVal($this->config['optante_simples']       ?? '1');
+        $regApTrib  = $this->dropdownVal($this->config['regime_tributario']    ?? '1');
         // Codigos de servico: busca config por produto, fallback para config global
         $productId = 0;
         if (!empty($invoice['items'])) {
@@ -77,7 +77,7 @@ class NfseXmlBuilder
             : ($this->config['c_trib_nac'] ?? '010801');
         $cTribMun = !empty($prodCfg->codigo_tributacao_municipio)
             ? $prodCfg->codigo_tributacao_municipio
-            : ($this->config['c_trib_mun'] ?? '003');
+            : ($this->config['codigo_tributacao_municipio'] ?? '010800001');
         $cNbs = !empty($prodCfg->codigo_nbs)
             ? $prodCfg->codigo_nbs
             : ($this->config['c_nbs'] ?? '115023000');
@@ -325,7 +325,7 @@ class NfseXmlBuilder
 
         // Tenta consultar ViaCEP (timeout curto para nao travar emissao)
         $url = 'https://viacep.com.br/ws/' . $cepClean . '/json/';
-        $ctx = stream_context_create(array('http' => array('timeout' => 5)));
+        $ctx = stream_context_create(array('http' => array('timeout' => 3)));
         $json = @file_get_contents($url, false, $ctx);
         if ($json !== false) {
             $data = json_decode($json, true);

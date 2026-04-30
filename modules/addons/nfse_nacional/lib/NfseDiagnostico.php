@@ -1,4 +1,6 @@
 <?php
+if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
+
 /**
  * NfseDiagnostico - Verifica conectividade com a API NFSe Nacional
  */

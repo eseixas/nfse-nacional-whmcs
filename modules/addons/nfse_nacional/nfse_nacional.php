@@ -150,6 +150,8 @@ function nfse_nacional_activate()
                 $t->integer('invoice_id')->unsigned()->unique();
                 $t->integer('client_id')->unsigned();
                 $t->string('numero_nfse', 30)->nullable();
+                $t->string('n_dfse', 20)->nullable();
+                $t->unsignedInteger('n_dps')->nullable();
                 $t->string('codigo_verificacao', 60)->nullable();
                 $t->decimal('valor', 10, 2)->default(0);
                 $t->decimal('valor_iss', 10, 2)->default(0);
@@ -267,13 +269,9 @@ function nfse_nacional_output($vars)
     try {
         $cols = Capsule::schema()->getColumnListing('mod_nfse_nacional');
         if (!in_array('codigo_verificacao', $cols)) {
-            // Coluna nao existe: adiciona com tamanho correto (53+ chars)
             Capsule::schema()->table('mod_nfse_nacional', function($t) {
                 $t->string('codigo_verificacao', 60)->nullable()->after('numero_nfse');
             });
-        } else {
-            // Coluna existe: garante tamanho 60 (era 30 nas versoes antigas)
-            Capsule::statement('ALTER TABLE mod_nfse_nacional MODIFY COLUMN codigo_verificacao VARCHAR(60)');
         }
         if (!in_array('mensagem_erro', $cols)) {
             Capsule::schema()->table('mod_nfse_nacional', function($t) {

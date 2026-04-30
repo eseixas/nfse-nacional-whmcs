@@ -1,4 +1,6 @@
 <?php
+if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
+
 /**
  * CertManager
  * Gerencia o upload, armazenamento seguro e leitura do certificado A1 (.pfx/.p12)
