@@ -7,8 +7,7 @@ modules/addons/nfse_nacional/certs/
 *.crt
 
 # Arquivos de debug gerados pelo addon
-modules/addons/nfse_nacional/debug_*.xml
-modules/addons/nfse_nacional/debug_*.txt
+modules/addons/nfse_nacional/debug/
 
 # Editores e OS
 .DS_Store
@@ -17,6 +16,11 @@ modules/addons/nfse_nacional/debug_*.txt
 *.swp
 *~
 Thumbs.db
+CLAUDE.md
+skills-lock.json
+.agents/
+.claude/
+.vscode/
 
 # Dependencias (addon nao usa Composer)
 vendor/

@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.6] — 2026-04-30
+
+### Correções
+
+- **Modo ao criar fatura** — `InvoiceCreation` agora emite mesmo quando a fatura ainda nao esta paga; emissão manual e `InvoicePaid` continuam exigindo fatura `Paid`
+- **Schema centralizado** — criação/migração de tabelas consolidada em uma função compartilhada por `activate()` e pela interface do addon
+- **Certificado** — senha do `.pfx` passa a usar `encrypt()`/`decrypt()` do WHMCS quando disponível, preservando leitura do formato legado
+- **Higiene de release** — arquivos texto normalizados para LF e `.gitattributes` adicionado para evitar diffs ruidosos por CRLF
+- **Segurança admin** — validação de filtros de exportação reforçada e escapes HTML adicionados em saídas do dashboard, widget e logs
+- **Licença** — manifesto `whmcs.json` alinhado para GPL-3.0
+
+## [1.5] — 2026-04-30
+
+### Correções
+
+- **Race condition DPS (completo)** — toda a seção crítica (reserva de n_dps + build XML + assinatura + validação + upsert) agora ocorre em uma única transação com `SELECT … FOR UPDATE`; emissões concorrentes são impossíveis de pegar o mesmo número
+- **n_dps no retry** — reemissão/retry agora atualiza o campo `n_dps` no banco junto com o novo XML assinado; banco e XML não ficam mais divergentes
+- **Config XML completo** — adicionados campos globais `codigo_tributacao_nacional`, `codigo_nbs`, `perc_trib_sn` e `tp_ret_issqn` ao config do addon; XmlBuilder corrigido para ler `codigo_tributacao_nacional` e `codigo_nbs` em vez dos aliases inexistentes `c_trib_nac`/`c_nbs`
+- **logModuleCall** — chamadas à API SefinNacional agora registradas no Module Log nativo do WHMCS
+- **debugDir lazy** — `debugDir()` agora só é invocado quando o debug está ativo; o diretório `debug/` não é mais criado desnecessariamente
+
+## [1.4] — 2026-04-30
+
+### Correções
+
+- **Schema** — `activate()` agora cria `n_dps` e `n_dfse` na tabela principal; emissão automática antes da primeira visita ao addon não falha mais com *unknown column*
+- **Config XML** — `NfseXmlBuilder` corrigido para ler as chaves corretas do config do addon: `optante_simples` (era `op_simples`) e `regime_tributario` (era `reg_ap_trib_sn`) e `codigo_tributacao_municipio` (era `c_trib_mun`); valores do admin agora são efetivamente usados no XML
+- **CSRF** — formulário de Serviços/Produtos agora inclui e valida token CSRF
+- **Race condition DPS** — `nextDpsNumber()` usa `SELECT … FOR UPDATE` dentro de transação; emissões simultâneas não geram mais o mesmo número de DPS
+- **Debug seguro** — arquivos de debug movidos para subdiretório `debug/` protegido com `.htaccess`; não ficam mais expostos na raiz do addon
+- **WHMCS guard** — `NfseController`, `CertManager` e `NfseDiagnostico` agora recusam acesso direto via HTTP
+- **Migration** — `ALTER TABLE MODIFY COLUMN` removido da execução em toda requisição; schema já é criado corretamente no `activate()` e nas migrations iniciais
+- **ViaCEP** — timeout reduzido de 5s para 3s
+
 ## [1.3] — 2026-04-27
 
 ### Remoções

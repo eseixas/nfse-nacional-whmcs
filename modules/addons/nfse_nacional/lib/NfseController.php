@@ -1,4 +1,6 @@
 <?php
+if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
+
 /**
  * NfseController
  * Interface administrativa do addon NFSE Nacional
@@ -108,7 +110,7 @@ class NfseController
             <strong>Prestador:</strong> <?= htmlspecialchars($this->config['razao_social'] ?? '') ?>
             &nbsp;|&nbsp; CNPJ: <?= $this->formatCnpj($this->config['cnpj']) ?>
             &nbsp;|&nbsp; IM: <?= htmlspecialchars($this->config['im'] ?? '') ?>
-            &nbsp;|&nbsp; ISS: <?= $this->config['aliquota_iss'] ?? '2.00' ?>%
+            &nbsp;|&nbsp; ISS: <?= htmlspecialchars((string)($this->config['aliquota_iss'] ?? '2.00')) ?>%
             &nbsp;|&nbsp; <a href="<?= $this->getConfigUrl() ?>"><i class="fa fa-cog"></i> Configuracoes</a>
         </p>
         <?php endif; ?>
@@ -164,7 +166,7 @@ class NfseController
                     <td><a href="invoices.php?action=edit&id=<?= $inv->id ?>" target="_blank">#<?= $inv->id ?></a></td>
                     <td><?= $inv->userid ?></td>
                     <td>R$ <?= number_format($inv->total, 2, ',', '.') ?></td>
-                    <td><?= $inv->datepaid ?></td>
+                    <td><?= htmlspecialchars((string)$inv->datepaid) ?></td>
                     <td>
                         <form method="post" action="<?= $this->modulelink ?>&action=emitir" style="display:inline">
                             <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
@@ -192,10 +194,10 @@ class NfseController
                     <td><a href="invoices.php?action=edit&id=<?= $n->invoice_id ?>" target="_blank">#<?= $n->invoice_id ?></a></td>
                     <td><?= $n->client_id ?></td>
                     <td>R$ <?= number_format($n->valor, 2, ',', '.') ?></td>
-                    <td><strong><?= $n->n_dps ?: '-' ?></strong></td>
-                    <td><?= $n->codigo_verificacao ?: '-' ?></td>
+                    <td><strong><?= htmlspecialchars((string)($n->n_dps ?: '-')) ?></strong></td>
+                    <td><?= htmlspecialchars((string)($n->codigo_verificacao ?: '-')) ?></td>
                     <td><?= $this->statusBadge($n->status) ?></td>
-                    <td><?= $n->emitida_em ?: '-' ?></td>
+                    <td><?= htmlspecialchars((string)($n->emitida_em ?: '-')) ?></td>
                     <td>
                         <?php if ($n->status === 'emitida'): ?>
                         <a href="<?= $this->modulelink ?>&action=ver_nfse&invoice_id=<?= $n->invoice_id ?>"
@@ -299,8 +301,8 @@ class NfseController
                     <table class="table table-condensed" style="margin:10px 0 0 0;max-width:500px;">
                         <tr><th>Arquivo original:</th><td><?= htmlspecialchars($meta['filename'] ?? '-') ?></td></tr>
                         <tr><th>Titular:</th><td><?= htmlspecialchars($meta['subject'] ?? '-') ?></td></tr>
-                        <tr><th>Valido ate:</th><td><?= $meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-' ?></td></tr>
-                        <tr><th>Enviado em:</th><td><?= $meta['uploaded_at'] ?? '-' ?></td></tr>
+                        <tr><th>Valido ate:</th><td><?= htmlspecialchars($meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-') ?></td></tr>
+                        <tr><th>Enviado em:</th><td><?= htmlspecialchars((string)($meta['uploaded_at'] ?? '-')) ?></td></tr>
                     </table>
                     <form method="post" action="<?= $this->modulelink ?>&action=upload_cert" style="margin-top:10px"
                           onsubmit="return confirm('Confirma a remocaoo do certificado?')">
@@ -496,7 +498,7 @@ class NfseController
                         <td><?= htmlspecialchars($r->codigo_verificacao ?: '-') ?></td>
                         <td>R$ <?= number_format($r->valor, 2, ',', '.') ?></td>
                         <td>R$ <?= number_format($r->valor_iss ?? 0, 2, ',', '.') ?></td>
-                        <td><?= $r->emitida_em ?></td>
+                        <td><?= htmlspecialchars((string)$r->emitida_em) ?></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -533,6 +535,23 @@ class NfseController
             $this->flash('Datas invalidas.', 'danger');
             $this->exportar();
             return;
+        }
+        [$anoInicio, $mesInicio, $diaInicio] = array_map('intval', explode('-', $dataInicio));
+        [$anoFim, $mesFim, $diaFim] = array_map('intval', explode('-', $dataFim));
+        if (!checkdate($mesInicio, $diaInicio, $anoInicio) || !checkdate($mesFim, $diaFim, $anoFim)) {
+            $this->renderNav();
+            $this->flash('Datas invalidas.', 'danger');
+            $this->exportar();
+            return;
+        }
+        if ($dataInicio > $dataFim) {
+            $this->renderNav();
+            $this->flash('A data inicial nao pode ser maior que a data final.', 'danger');
+            $this->exportar();
+            return;
+        }
+        if (!in_array($statusFiltro, ['emitida', 'cancelada', 'todos'], true)) {
+            $statusFiltro = 'emitida';
         }
 
         // Busca registros
@@ -664,7 +683,7 @@ class NfseController
                 <tbody>
                 <?php foreach ($logs as $l): ?>
                 <tr>
-                    <td><?= $l->created_at ?></td>
+                    <td><?= htmlspecialchars((string)$l->created_at) ?></td>
                     <td><?= $this->logBadge($l->tipo) ?></td>
                     <td><?= htmlspecialchars($l->acao) ?></td>
                     <td><?= $l->invoice_id ? '#' . $l->invoice_id : '-' ?></td>
@@ -736,7 +755,7 @@ class NfseController
                             <?php $r = $result[$k]; ?>
                             <tr>
                                 <td><?= $ok($r['ok']) ?></td>
-                                <td><code style="font-size:10px"><?= $r['host'] ?></code><br>
+                                <td><code style="font-size:10px"><?= htmlspecialchars((string)$r['host']) ?></code><br>
                                     <small class="text-muted"><?= htmlspecialchars($r['msg']) ?></small></td>
                             </tr>
                         <?php endforeach; ?>
@@ -957,7 +976,8 @@ class NfseController
             $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
         }
 
-        $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($record->numero_nfse ?? '0') . '.xml';
+        $numeroNfse = preg_replace('/[^A-Za-z0-9_.-]/', '', (string)($record->numero_nfse ?? '0'));
+        $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($numeroNfse ?: '0') . '.xml';
 
         header('Content-Type: application/xml; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $nome . '"');
@@ -977,6 +997,7 @@ class NfseController
 
         // Salva configuracao
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_produto'])) {
+            $this->verifyCsrf();
             $productId = (int)($_POST['product_id'] ?? 0);
             if ($productId > 0) {
                 $data = array(
@@ -1037,6 +1058,7 @@ class NfseController
                       style="border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:10px;">
                     <input type="hidden" name="salvar_produto" value="1">
                     <input type="hidden" name="product_id" value="<?= $p->id ?>">
+                    <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
                     <div class="row">
                         <div class="col-sm-3">
                             <strong>#<?= $p->id ?> <?= htmlspecialchars($p->name) ?></strong>
@@ -1084,6 +1106,255 @@ class NfseController
         <?php
     }
 
+    // =========================================================================
+    // Clientes - modo de emissao por cliente
+    // =========================================================================
+
+    public function clientes(): void
+    {
+        $modoPadraoRaw = $this->config['emissao_automatica'] ?? '';
+        $modoPadraoKey = (strpos($modoPadraoRaw, '=') !== false)
+            ? trim(explode('=', $modoPadraoRaw)[0])
+            : trim($modoPadraoRaw);
+        if (!in_array($modoPadraoKey, ['manual', 'invoice', 'paid'], true)) {
+            $modoPadraoKey = 'manual';
+        }
+        $modoPadraoLabel = [
+            'manual'  => 'Manual',
+            'invoice' => 'Ao emitir a fatura',
+            'paid'    => 'Ao pagar a fatura',
+        ][$modoPadraoKey];
+
+        $modosValidos = ['default', 'nao_emitir', 'paid', 'invoice', 'manual'];
+        $modoLabels = [
+            'default'    => 'Usar padrao do modulo (' . $modoPadraoLabel . ')',
+            'nao_emitir' => 'Nao emitir',
+            'paid'       => 'Emitir ao pagar a fatura',
+            'invoice'    => 'Emitir ao criar a fatura',
+            'manual'     => 'Apenas manual',
+        ];
+
+        $this->renderNav();
+
+        // Salvar
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cliente'])) {
+            try {
+                $this->verifyCsrf();
+                $clientId = (int)($_POST['client_id'] ?? 0);
+                $modo     = (string)($_POST['emissao_modo'] ?? 'default');
+                if (!in_array($modo, $modosValidos, true)) {
+                    $modo = 'default';
+                }
+                if ($clientId > 0) {
+                    if ($modo === 'default') {
+                        Capsule::table('mod_nfse_nacional_clientes')
+                            ->where('client_id', $clientId)->delete();
+                        $this->flash('Cliente #' . $clientId . ' voltou a usar o padrao do modulo.', 'success');
+                    } else {
+                        $existe = Capsule::table('mod_nfse_nacional_clientes')
+                            ->where('client_id', $clientId)->exists();
+                        $payload = [
+                            'emissao_modo' => $modo,
+                            'updated_at'   => date('Y-m-d H:i:s'),
+                        ];
+                        if ($existe) {
+                            Capsule::table('mod_nfse_nacional_clientes')
+                                ->where('client_id', $clientId)->update($payload);
+                        } else {
+                            $payload['client_id'] = $clientId;
+                            Capsule::table('mod_nfse_nacional_clientes')->insert($payload);
+                        }
+                        $this->flash('Modo de emissao salvo para o cliente #' . $clientId . '.', 'success');
+                    }
+                } else {
+                    $this->flash('Selecione um cliente valido.', 'danger');
+                }
+            } catch (\Throwable $e) {
+                $this->flash($e->getMessage(), 'danger', true);
+            }
+        }
+
+        $token = $this->getCsrfToken();
+        $busca = trim((string)($_GET['busca'] ?? ''));
+
+        // Lista clientes ja com override configurado
+        $overrides = Capsule::table('mod_nfse_nacional_clientes as c')
+            ->leftJoin('tblclients as t', 't.id', '=', 'c.client_id')
+            ->select('c.client_id', 'c.emissao_modo', 'c.updated_at',
+                     't.firstname', 't.lastname', 't.companyname', 't.email')
+            ->orderBy('c.client_id')
+            ->get();
+
+        // Busca de cliente para adicionar/editar override
+        $resultados = [];
+        if ($busca !== '') {
+            $q = Capsule::table('tblclients')
+                ->select('id', 'firstname', 'lastname', 'companyname', 'email')
+                ->orderBy('id', 'desc')
+                ->limit(20);
+            if (ctype_digit($busca)) {
+                $q->where('id', (int)$busca);
+            } else {
+                $like = '%' . $busca . '%';
+                $q->where(function ($w) use ($like) {
+                    $w->where('firstname', 'like', $like)
+                      ->orWhere('lastname', 'like', $like)
+                      ->orWhere('companyname', 'like', $like)
+                      ->orWhere('email', 'like', $like);
+                });
+            }
+            $resultados = $q->get();
+        }
+
+        $editId = (int)($_GET['id'] ?? 0);
+        $editCliente = null;
+        $editModo    = 'default';
+        if ($editId > 0) {
+            $editCliente = Capsule::table('tblclients')->where('id', $editId)->first();
+            if ($editCliente) {
+                $row = Capsule::table('mod_nfse_nacional_clientes')
+                    ->where('client_id', $editId)->first();
+                $editModo = $row ? (string)$row->emissao_modo : 'default';
+            }
+        }
+        ?>
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">
+                    <i class="fa fa-users"></i> Modo de emissao por cliente
+                </h3>
+            </div>
+            <div class="panel-body">
+                <p class="text-muted">
+                    Defina, por cliente, se a NFS-e deve ser emitida automaticamente. Sem registro
+                    aqui, o cliente segue o <strong>padrao do modulo</strong>:
+                    <code><?= htmlspecialchars($modoPadraoLabel) ?></code>.
+                </p>
+
+                <?php if ($editCliente): ?>
+                <div style="border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:15px;background:#fafafa;">
+                    <h4 style="margin-top:0;">
+                        Cliente #<?= (int)$editCliente->id ?>
+                        - <?= htmlspecialchars(trim(($editCliente->firstname ?? '') . ' ' . ($editCliente->lastname ?? ''))) ?>
+                        <?php if (!empty($editCliente->companyname)): ?>
+                            <small class="text-muted">(<?= htmlspecialchars($editCliente->companyname) ?>)</small>
+                        <?php endif; ?>
+                    </h4>
+                    <form method="post" action="<?= $this->modulelink ?>&action=clientes">
+                        <input type="hidden" name="salvar_cliente" value="1">
+                        <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
+                        <input type="hidden" name="client_id" value="<?= (int)$editCliente->id ?>">
+                        <?php foreach ($modosValidos as $m): ?>
+                            <div class="radio">
+                                <label>
+                                    <input type="radio" name="emissao_modo" value="<?= $m ?>"
+                                           <?= ($editModo === $m) ? 'checked' : '' ?>>
+                                    <?= htmlspecialchars($modoLabels[$m]) ?>
+                                </label>
+                            </div>
+                        <?php endforeach; ?>
+                        <div style="margin-top:10px;">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa fa-save"></i> Salvar
+                            </button>
+                            <a href="<?= $this->modulelink ?>&action=clientes" class="btn btn-default">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+                <?php endif; ?>
+
+                <h4>Clientes com configuracao personalizada</h4>
+                <?php if (count($overrides) === 0): ?>
+                    <p class="text-muted">Nenhum cliente com modo personalizado.</p>
+                <?php else: ?>
+                <table class="table table-condensed table-bordered">
+                    <thead>
+                        <tr>
+                            <th style="width:80px;">ID</th>
+                            <th>Cliente</th>
+                            <th style="width:220px;">Modo</th>
+                            <th style="width:150px;">Atualizado</th>
+                            <th style="width:80px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($overrides as $o):
+                        $nome = trim(($o->firstname ?? '') . ' ' . ($o->lastname ?? ''));
+                        if (!empty($o->companyname)) $nome .= ' (' . $o->companyname . ')';
+                        if ($nome === '') $nome = '<em class="text-muted">cliente removido</em>';
+                    ?>
+                        <tr>
+                            <td>#<?= (int)$o->client_id ?></td>
+                            <td><?= $nome === '<em class="text-muted">cliente removido</em>' ? $nome : htmlspecialchars($nome) ?>
+                                <?php if (!empty($o->email)): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars($o->email) ?></small>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= htmlspecialchars($modoLabels[$o->emissao_modo] ?? $o->emissao_modo) ?></td>
+                            <td><small><?= htmlspecialchars((string)$o->updated_at) ?></small></td>
+                            <td>
+                                <a href="<?= $this->modulelink ?>&action=clientes&id=<?= (int)$o->client_id ?>"
+                                   class="btn btn-xs btn-default">
+                                    <i class="fa fa-edit"></i> Editar
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+
+                <hr>
+                <h4>Adicionar / editar cliente</h4>
+                <form method="get" action="<?= $this->modulelink ?>" class="form-inline" style="margin-bottom:10px;">
+                    <input type="hidden" name="module" value="nfse_nacional">
+                    <input type="hidden" name="action" value="clientes">
+                    <input type="text" name="busca" class="form-control" placeholder="ID, nome, empresa ou e-mail"
+                           value="<?= htmlspecialchars($busca) ?>" style="width:320px;">
+                    <button type="submit" class="btn btn-default">
+                        <i class="fa fa-search"></i> Buscar
+                    </button>
+                </form>
+
+                <?php if ($busca !== ''): ?>
+                    <?php if (count($resultados) === 0): ?>
+                        <p class="text-muted">Nenhum cliente encontrado para "<?= htmlspecialchars($busca) ?>".</p>
+                    <?php else: ?>
+                    <table class="table table-condensed">
+                        <thead>
+                            <tr>
+                                <th style="width:80px;">ID</th>
+                                <th>Nome</th>
+                                <th>E-mail</th>
+                                <th style="width:80px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($resultados as $r):
+                            $nome = trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? ''));
+                            if (!empty($r->companyname)) $nome .= ' (' . $r->companyname . ')';
+                        ?>
+                            <tr>
+                                <td>#<?= (int)$r->id ?></td>
+                                <td><?= htmlspecialchars($nome) ?></td>
+                                <td><?= htmlspecialchars((string)$r->email) ?></td>
+                                <td>
+                                    <a href="<?= $this->modulelink ?>&action=clientes&id=<?= (int)$r->id ?>"
+                                       class="btn btn-xs btn-primary">
+                                        <i class="fa fa-cog"></i> Configurar
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+    }
+
         private function renderNav(): void
     {
         $l       = $this->modulelink;
@@ -1099,6 +1370,7 @@ class NfseController
             '&action=log'           => ['fa-list',        'Log'],
             '&action=diagnostico'   => ['fa-stethoscope', 'Diagnostico'],
             '&action=produtos'       => ['fa-cubes',        'Servicos/Produtos'],
+            '&action=clientes'       => ['fa-users',        'Clientes'],
         ];
 
         foreach ($items as $q => $info) {

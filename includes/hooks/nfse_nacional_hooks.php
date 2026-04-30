@@ -15,7 +15,7 @@ use WHMCS\Database\Capsule;
 
 // --- Funcao auxiliar de emissao (usada por ambos os hooks) -------------------
 
-function nfse_nacional_emitir_automatico($invoiceId)
+function nfse_nacional_emitir_automatico($invoiceId, array $options = [])
 {
     $invoiceId = (int)$invoiceId;
     $config    = nfse_nacional_get_config();
@@ -44,10 +44,12 @@ function nfse_nacional_emitir_automatico($invoiceId)
         require_once ROOTDIR . '/modules/addons/nfse_nacional/lib/NfseService.php';
 
         $service = new NfseService($config);
-        $result  = $service->emitirParaFatura($invoiceId);
+        $result  = $service->emitirParaFatura($invoiceId, $options);
 
         if ($result['success']) {
             logActivity('[NFSE Nacional] NFS-e emitida para fatura #' . $invoiceId . '. ' . $result['message']);
+        } elseif (!empty($result['blocked_by_status'])) {
+            logActivity('[NFSE Nacional] Emissao ignorada por regra de status. Fatura #' . $invoiceId . ': ' . $result['message']);
         } else {
             logActivity('[NFSE Nacional] FALHA ao emitir NFS-e para fatura #' . $invoiceId . ': ' . $result['message']);
         }
@@ -59,23 +61,39 @@ function nfse_nacional_emitir_automatico($invoiceId)
 // --- Hook: Ao criar fatura (modo invoice) ------------------------------------
 
 add_hook('InvoiceCreation', 1, function ($vars) {
-    $config = nfse_nacional_get_config();
-    $modo   = nfse_nacional_normalizar_modo($config['emissao_automatica'] ?? '');
+    $invoiceId = (int)($vars['invoiceid'] ?? 0);
+    if ($invoiceId <= 0) return;
+
+    $config     = nfse_nacional_get_config();
+    $modoPadrao = nfse_nacional_normalizar_modo($config['emissao_automatica'] ?? '');
+
+    $invoice = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
+    if (!$invoice) return;
+
+    $modo = nfse_nacional_get_modo_cliente((int)$invoice->userid, $modoPadrao);
     if ($modo !== 'invoice') {
         return;
     }
-    nfse_nacional_emitir_automatico($vars['invoiceid'] ?? 0);
+    nfse_nacional_emitir_automatico($invoiceId, ['allow_unpaid' => true, 'source' => 'InvoiceCreation']);
 });
 
 // --- Hook: Ao pagar fatura (modo paid) ---------------------------------------
 
 add_hook('InvoicePaid', 1, function ($vars) {
-    $config = nfse_nacional_get_config();
-    $modo   = nfse_nacional_normalizar_modo($config['emissao_automatica'] ?? '');
+    $invoiceId = (int)($vars['invoiceid'] ?? 0);
+    if ($invoiceId <= 0) return;
+
+    $config     = nfse_nacional_get_config();
+    $modoPadrao = nfse_nacional_normalizar_modo($config['emissao_automatica'] ?? '');
+
+    $invoice = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
+    if (!$invoice) return;
+
+    $modo = nfse_nacional_get_modo_cliente((int)$invoice->userid, $modoPadrao);
     if ($modo !== 'paid') {
         return;
     }
-    nfse_nacional_emitir_automatico($vars['invoiceid'] ?? 0);
+    nfse_nacional_emitir_automatico($invoiceId, ['source' => 'InvoicePaid']);
 });
 
 // --- Hook: Widget na Pagina de Faturas ---------------------------------------
@@ -120,13 +138,13 @@ add_hook('AdminAreaPage', 1, function ($vars) {
     ?>
     <div id="nfse-nacional-box" style="background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:15px;">
         <strong><i class="fa fa-file-text-o"></i> NFSE Nacional</strong>
-        <span style="float:right;font-size:11px;color:#888;"><?= $env ?> | <?= $modoLabel[$modo] ?? $modo ?></span>
+        <span style="float:right;font-size:11px;color:#888;"><?= htmlspecialchars($env) ?> | <?= htmlspecialchars($modoLabel[$modo] ?? $modo) ?></span>
         <hr style="margin:8px 0;">
         <?php if ($nfse && $nfse->status === 'emitida'): ?>
             <span class="label label-success">Emitida</span>
             NFS-e <strong>No <?= htmlspecialchars($nfse->n_dps ?? $nfse->numero_nfse) ?></strong>
             <?php if ($nfse->codigo_verificacao): ?> | Cod. Verif.: <code><?= htmlspecialchars($nfse->codigo_verificacao) ?></code><?php endif; ?>
-            <br><small class="text-muted">em <?= $nfse->emitida_em ?></small>
+            <br><small class="text-muted">em <?= htmlspecialchars((string)$nfse->emitida_em) ?></small>
             <br><br>
             <a href="addonmodules.php?module=nfse_nacional&action=ver_nfse&invoice_id=<?= $invoiceId ?>"
                class="btn btn-xs btn-info" target="_blank">
@@ -144,7 +162,7 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             <span class="label label-warning">Pendente</span>
             Aguardando processamento da prefeitura.
             <form method="post" action="<?= $modLink ?>&action=emitir" style="display:inline">
-                <input type="hidden" name="nfse_csrf_token" value="<?= $token ?>">
+                <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                 <button type="submit" class="btn btn-xs btn-warning"><i class="fa fa-refresh"></i> Verificar / Retentar</button>
             </form>
@@ -152,13 +170,13 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             <span class="label label-danger">Erro</span>
             <?= htmlspecialchars(mb_substr($nfse->mensagem_erro ?? '', 0, 100, 'UTF-8')) ?>
             <form method="post" action="<?= $modLink ?>&action=emitir" style="display:inline">
-                <input type="hidden" name="nfse_csrf_token" value="<?= $token ?>">
+                <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                 <button type="submit" class="btn btn-xs btn-warning"><i class="fa fa-refresh"></i> Retentar</button>
             </form>
         <?php else: ?>
             <form method="post" action="<?= $modLink ?>&action=emitir">
-                <input type="hidden" name="nfse_csrf_token" value="<?= $token ?>">
+                <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                 <button type="submit" class="btn btn-sm btn-primary" <?= $certOk ? '' : 'disabled title="Configure o certificado digital"' ?>>
                     <i class="fa fa-paper-plane"></i> Emitir NFS-e
@@ -258,4 +276,32 @@ function nfse_nacional_get_config(): array
         ->where('module', 'nfse_nacional')
         ->pluck('value', 'setting')
         ->toArray();
+}
+
+/**
+ * Resolve o modo de emissao efetivo para um cliente.
+ * Retorna o modo padrao do modulo se o cliente nao tiver override
+ * ou se o override estiver definido como 'default'.
+ */
+function nfse_nacional_get_modo_cliente(int $clientId, string $modoPadrao): string
+{
+    if ($clientId <= 0) {
+        return $modoPadrao;
+    }
+    try {
+        $row = Capsule::table('mod_nfse_nacional_clientes')
+            ->where('client_id', $clientId)
+            ->first();
+    } catch (\Throwable $e) {
+        return $modoPadrao;
+    }
+
+    $modo = $row ? (string)$row->emissao_modo : 'default';
+    if ($modo === '' || $modo === 'default') {
+        return $modoPadrao;
+    }
+    if (!in_array($modo, ['nao_emitir', 'paid', 'invoice', 'manual'], true)) {
+        return $modoPadrao;
+    }
+    return $modo;
 }
