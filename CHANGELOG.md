@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5] — 2026-04-30
+
+### Correções
+
+- **Race condition DPS (completo)** — toda a seção crítica (reserva de n_dps + build XML + assinatura + validação + upsert) agora ocorre em uma única transação com `SELECT … FOR UPDATE`; emissões concorrentes são impossíveis de pegar o mesmo número
+- **n_dps no retry** — reemissão/retry agora atualiza o campo `n_dps` no banco junto com o novo XML assinado; banco e XML não ficam mais divergentes
+- **Config XML completo** — adicionados campos globais `codigo_tributacao_nacional`, `codigo_nbs`, `perc_trib_sn` e `tp_ret_issqn` ao config do addon; XmlBuilder corrigido para ler `codigo_tributacao_nacional` e `codigo_nbs` em vez dos aliases inexistentes `c_trib_nac`/`c_nbs`
+- **logModuleCall** — chamadas à API SefinNacional agora registradas no Module Log nativo do WHMCS
+- **debugDir lazy** — `debugDir()` agora só é invocado quando o debug está ativo; o diretório `debug/` não é mais criado desnecessariamente
+
 ## [1.4] — 2026-04-30
 
 ### Correções

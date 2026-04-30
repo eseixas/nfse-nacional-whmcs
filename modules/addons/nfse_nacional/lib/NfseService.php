@@ -50,17 +50,18 @@ class NfseService
         return $dir;
     }
 
-    private function debugWrite($path, $content): void
+    private function debugWrite(string $filename, string $content): void
     {
         if ($this->debugEnabled()) {
-            file_put_contents($path, $content);
+            file_put_contents($this->debugDir() . '/' . $filename, $content);
         }
     }
 
-    private function debugAppend($path, $content): void
+    private function debugAppend(string $filename, string $content): void
     {
         if ($this->debugEnabled()) {
-            file_put_contents($path, file_get_contents($path) . $content);
+            $path = $this->debugDir() . '/' . $filename;
+            file_put_contents($path, @file_get_contents($path) . $content);
         }
     }
 
@@ -116,73 +117,68 @@ class NfseService
             $certs  = $this->certMgr->read();
             $signer = new NfseSigner($certs);
 
-            // Numero sequencial da DPS
-            $nDps = $this->nextDpsNumber();
-
-            // Constroi XML da DPS (padrao NFSe Nacional SPED v1.00)
-            $xmlDps = $this->builder->buildDps($invoice, $client, $nDps);
-
-            // Extrai o Id do infDPS para a assinatura
-            if (!preg_match('/Id="([^"]+)"/', $xmlDps, $m)) {
-                throw new Exception('Id nao encontrado no XML da DPS.');
-            }
-            $refUri = '#' . $m[1];
-
-            // Assina com RSA-SHA256 via DOM (garante XML valido apos assinatura)
-            $xmlAssinado = $signer->sign($xmlDps, $refUri);
-
             $valorIss    = round($invoice['total'] * ((float)($this->config['aliquota_iss'] ?? 2) / 100), 2);
             $hasValorIss = in_array('valor_iss', Capsule::schema()->getColumnListing('mod_nfse_nacional'));
 
-            // Upsert: se ja existe registro (qualquer status exceto emitida), atualiza; senao insere
-            $existing2 = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
+            // Aloca n_dps, constroi, assina, valida e persiste em uma unica transacao com lock.
+            // O SELECT lockForUpdate() impede que duas emissoes simultaneas peguem o mesmo n_dps.
+            [$recordId, $nDps, $xmlAssinado] = Capsule::transaction(
+                function () use ($invoice, $client, $invoiceId, $signer, $valorIss, $hasValorIss) {
+                    $offset = max(1, (int)($this->config['ndps_offset'] ?? 1));
+                    $nDps   = max(
+                        $offset,
+                        (int) Capsule::table('mod_nfse_nacional')->lockForUpdate()->max('n_dps') + 1
+                    );
 
-            if ($existing2) {
-                // Reenvio: atualiza o registro existente
-                $recordId = $existing2->id;
-                $updateData = array(
-                    'client_id'    => $invoice['userid'],
-                    'valor'        => $invoice['total'],
-                    'status'       => 'pendente',
-                    'xml_enviado'  => $xmlAssinado,
-                    'xml_retorno'  => null,
-                    'mensagem_erro'=> null,
-                    'updated_at'   => now(),
-                );
-                if ($hasValorIss) {
-                    $updateData['valor_iss'] = $valorIss;
+                    $xmlDps = $this->builder->buildDps($invoice, $client, $nDps);
+                    if (!preg_match('/Id="([^"]+)"/', $xmlDps, $m)) {
+                        throw new \Exception('Id nao encontrado no XML da DPS.');
+                    }
+                    $xmlAssinado = $signer->sign($xmlDps, '#' . $m[1]);
+
+                    libxml_use_internal_errors(true);
+                    $dom = new \DOMDocument();
+                    if (!$dom->loadXML($xmlAssinado)) {
+                        $errs = array_map(function ($e) { return $e->message; }, libxml_get_errors());
+                        libxml_clear_errors();
+                        throw new \Exception('XML da DPS invalido: ' . implode('; ', $errs));
+                    }
+                    libxml_clear_errors();
+
+                    $existing2 = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
+                    if ($existing2) {
+                        $updateData = array(
+                            'client_id'    => $invoice['userid'],
+                            'valor'        => $invoice['total'],
+                            'n_dps'        => $nDps,
+                            'status'       => 'pendente',
+                            'xml_enviado'  => $xmlAssinado,
+                            'xml_retorno'  => null,
+                            'mensagem_erro'=> null,
+                            'updated_at'   => now(),
+                        );
+                        if ($hasValorIss) { $updateData['valor_iss'] = $valorIss; }
+                        Capsule::table('mod_nfse_nacional')->where('id', $existing2->id)->update($updateData);
+                        return array($existing2->id, $nDps, $xmlAssinado);
+                    } else {
+                        $insertData = array(
+                            'invoice_id'  => $invoiceId,
+                            'client_id'   => $invoice['userid'],
+                            'valor'       => $invoice['total'],
+                            'status'      => 'pendente',
+                            'xml_enviado' => $xmlAssinado,
+                            'n_dps'       => $nDps,
+                            'created_at'  => now(),
+                            'updated_at'  => now(),
+                        );
+                        if ($hasValorIss) { $insertData['valor_iss'] = $valorIss; }
+                        $id = Capsule::table('mod_nfse_nacional')->insertGetId($insertData);
+                        return array($id, $nDps, $xmlAssinado);
+                    }
                 }
-                Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update($updateData);
-            } else {
-                $insertData = array(
-                    'invoice_id'  => $invoiceId,
-                    'client_id'   => $invoice['userid'],
-                    'valor'       => $invoice['total'],
-                    'status'      => 'pendente',
-                    'xml_enviado' => $xmlAssinado,
-                    'n_dps'       => $nDps,
-                    'created_at'  => now(),
-                    'updated_at'  => now(),
-                );
-                if ($hasValorIss) {
-                    $insertData['valor_iss'] = $valorIss;
-                }
-                $recordId = Capsule::table('mod_nfse_nacional')->insertGetId($insertData);
-            }
+            );
 
-            // Valida o XML antes de enviar
-            libxml_use_internal_errors(true);
-            $dom = new DOMDocument();
-            if (!$dom->loadXML($xmlAssinado)) {
-                $errs = array_map(function($e) { return $e->message; }, libxml_get_errors());
-                libxml_clear_errors();
-                throw new Exception('XML da DPS invalido: ' . implode('; ', $errs));
-            }
-            libxml_clear_errors();
-
-            // Grava o XML para diagnostico (remova em producao)
-            $debugPath = $this->debugDir() . '/debug_dps_' . $invoiceId . '.xml';
-            $this->debugWrite($debugPath, $xmlAssinado);
+            $this->debugWrite('debug_dps_' . $invoiceId . '.xml', $xmlAssinado);
 
             // Envia para a API NFSe Nacional
             $cnpj     = preg_replace('/\D/', '', $this->config['cnpj']);
@@ -353,7 +349,7 @@ class NfseService
                 }
             }
 
-            $debugGet = $this->debugDir() . '/debug_get_nfse_' . $invoiceId . '.txt';
+            $debugGet = 'debug_get_nfse_' . $invoiceId . '.txt';
             $this->debugWrite($debugGet, "GET /nfse/{$chaveUrl}\n" .
                 "success: " . ($getResp['success'] ? 'true' : 'false') . "\n" .
                 "error: " . ($getResp['error'] ?? 'nenhum') . "\n" .
@@ -399,11 +395,8 @@ class NfseService
             $xmlCancel   = $this->builder->buildCancelamento($record->numero_nfse, $chaveAcesso, $nDfse);
             $xmlAssinado = $signer->signCancelamento($xmlCancel);
 
-            // Debug: salva XML de cancelamento para inspecao
-            $debugCancel = $this->debugDir() . '/debug_cancel_' . $invoiceId . '.xml';
-            $this->debugWrite($debugCancel, $xmlAssinado);
+            $this->debugWrite('debug_cancel_' . $invoiceId . '.xml', $xmlAssinado);
 
-            // Debug: salva info do request (URL e ambiente)
             $chaveUrl = preg_match('/^NFS(.{50})$/i', $chaveAcesso, $mxd) ? $mxd[1] : $chaveAcesso;
             $ambienteRaw = $this->config['ambiente'] ?? 'producao_restrita';
             $ambiente    = (strpos($ambienteRaw, '=') !== false)
@@ -411,7 +404,7 @@ class NfseService
             $baseUrl   = ($ambiente === 'producao')
                 ? 'https://sefin.nfse.gov.br/SefinNacional/'
                 : 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/';
-            $debugUrl  = $this->debugDir() . '/debug_cancel_url_' . $invoiceId . '.txt';
+            $debugUrl  = 'debug_cancel_url_' . $invoiceId . '.txt';
             $this->debugWrite($debugUrl, "Ambiente: {$ambiente}\n" .
                 "URL: {$baseUrl}nfse/{$chaveUrl}/eventos\n" .
                 "chaveAcesso original: {$chaveAcesso}\n" .
@@ -480,17 +473,6 @@ class NfseService
         return $client;
     }
 
-    private function nextDpsNumber(): int
-    {
-        $offset = max(1, (int)($this->config['ndps_offset'] ?? 1));
-
-        return (int) Capsule::transaction(function () use ($offset) {
-            $max = Capsule::table('mod_nfse_nacional')
-                ->lockForUpdate()
-                ->max('n_dps');
-            return max($offset, (int)$max + 1);
-        });
-    }
 
     private function addNoteToInvoice($invoiceId, $numeroNfse)
     {

@@ -2,7 +2,7 @@
     "schema": "1.0",
     "type": "whmcs-addons",
     "name": "nfse_nacional",
-    "version": "1.4",
+    "version": "1.5",
     "license": "MIT",
     "category": "addon",
     "description": {

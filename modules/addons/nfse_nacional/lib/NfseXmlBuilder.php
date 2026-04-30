@@ -74,13 +74,13 @@ class NfseXmlBuilder
         }
         $cTribNac = !empty($prodCfg->codigo_tributacao_nacional)
             ? $prodCfg->codigo_tributacao_nacional
-            : ($this->config['c_trib_nac'] ?? '010801');
+            : ($this->config['codigo_tributacao_nacional'] ?? '010801');
         $cTribMun = !empty($prodCfg->codigo_tributacao_municipio)
             ? $prodCfg->codigo_tributacao_municipio
             : ($this->config['codigo_tributacao_municipio'] ?? '010800001');
         $cNbs = !empty($prodCfg->codigo_nbs)
             ? $prodCfg->codigo_nbs
-            : ($this->config['c_nbs'] ?? '115023000');
+            : ($this->config['codigo_nbs'] ?? '115023000');
         $xDescServ  = $this->buildDiscriminacao($invoice);
         $tpRetISSQN = $this->dropdownVal($this->config['tp_ret_issqn'] ?? '1');
 

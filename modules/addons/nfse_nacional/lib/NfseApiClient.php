@@ -252,6 +252,17 @@ class NfseApiClient
         $curlError = curl_error($ch);
         curl_close($ch);
 
+        if (function_exists('logModuleCall')) {
+            logModuleCall(
+                'nfse_nacional',
+                $method . ' ' . $endpoint,
+                $body,
+                $curlError ?: (string)$response,
+                '',
+                array($this->certPassword)
+            );
+        }
+
         if ($curlError) {
             return array('success' => false, 'error' => 'Erro de conexao: ' . $curlError, 'raw' => '');
         }
