@@ -60,17 +60,17 @@ class NfseXmlBuilder
         $vServ      = number_format((float)$invoice['total'], 2, '.', '');
         $pTotTribSN = number_format((float)($this->config['perc_trib_sn'] ?? 6), 2, '.', '');
         // opSimpNac: 1 = Nao Optante, 2 = MEI, 3 = ME/EPP
-        $rawOpSimp  = $this->dropdownVal($this->config['optante_simples'] ?? '3');
-        if ($rawOpSimp === '1') {
+        $rawOpSimp  = $this->dropdownVal($this->config['optante_simples'] ?? 'Optante (ME/EPP)');
+        if ($rawOpSimp === '1' || $rawOpSimp === 'meepp' || $rawOpSimp === 'Optante (ME/EPP)') {
             // Legado: 1 era "Sim", assumimos ME/EPP (3)
             $opSimpNac = '3';
-        } elseif ($rawOpSimp === '2') {
+        } elseif ($rawOpSimp === '2' || $rawOpSimp === 'nao' || $rawOpSimp === 'Nao Optante') {
             // Legado: 2 era "Nao", mapeamos para Nao Optante (1)
             $opSimpNac = '1';
+        } elseif ($rawOpSimp === 'mei' || $rawOpSimp === 'Optante (MEI)') {
+            $opSimpNac = '2';
         } else {
-            // Novos valores: 'nao' => '1', 'mei' => '2', 'meepp' => '3'
-            $map = ['nao' => '1', 'mei' => '2', 'meepp' => '3'];
-            $opSimpNac = $map[$rawOpSimp] ?? '3';
+            $opSimpNac = '3';
         }
         $regApTrib  = $this->dropdownVal($this->config['regime_tributario']    ?? '1');
         // Codigos de servico: busca config por produto, fallback para config global

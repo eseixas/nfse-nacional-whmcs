@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.6.4
+ * @version 1.6.5
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6.4',
+        'version'     => '1.6.5',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -59,9 +59,9 @@ function nfse_nacional_config()
             'optante_simples' => [
                 'FriendlyName' => 'Optante pelo Simples Nacional',
                 'Type'         => 'dropdown',
-                'Options'      => 'meepp=Optante (ME/EPP),mei=Optante (MEI),nao=Nao Optante',
-                'Default'      => 'meepp',
-                'Description'  => 'Status no Simples Nacional (ME/EPP = 3, MEI = 2, Nao = 1)',
+                'Options'      => 'Optante (ME/EPP),Optante (MEI),Nao Optante',
+                'Default'      => 'Optante (ME/EPP)',
+                'Description'  => 'Status no Simples Nacional',
             ],
             'incentivador_cultural' => [
                 'FriendlyName' => 'Incentivador Cultural',

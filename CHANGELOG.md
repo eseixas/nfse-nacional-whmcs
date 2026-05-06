@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.5] — 2026-05-06
+
+### Melhorias
+
+- **Visualização das Opções do Simples Nacional** — As chaves das opções foram removidas do dropdown de configuração (`optante_simples`) para evitar exibição duplicada/confusa no painel do WHMCS. As opções agora são exibidas puramente como valores legíveis ("Optante (ME/EPP)", "Optante (MEI)", "Nao Optante"). O código do `NfseXmlBuilder.php` foi ajustado para mapear estes textos diretamente para os códigos `opSimpNac` da SefinNacional.
 ## [1.6.4] — 2026-05-06
 
 ### Correções
