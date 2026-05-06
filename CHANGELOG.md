@@ -1,10 +1,16 @@
 # Changelog
 
+## [1.6.4] — 2026-05-06
+
+### Correções
+
+- **Opção Simples Nacional (E0160)** — corrigido o mapeamento do campo `opSimpNac` enviado à Receita. O valor `1` no WHMCS (que antes era exibido como "Sim") estava sendo enviado como "Não Optante" (`1` no schema), causando erro E0160 por divergência com o cadastro da Receita. Foram introduzidas novas chaves na configuração (`meepp`, `mei`, `nao`) para clarificar a exibição e adicionado tratamento retroativo em `NfseXmlBuilder.php` para mapear corretamente o `1` (antigo "Sim") para `3` (Optante ME/EPP) e o `2` (antigo "Não") para `1` (Não Optante). A tag `<regApTribSN>` agora é corretamente omitida para Não Optantes.
 ## [1.6.3] — 2026-05-06
 
 ### Correções
 
 - **Clock Skew Timezone (E0008)** — corrigido bug onde o servidor PHP em UTC gerava data/hora correta globalmente (`+00:00`), mas a API da SefinNacional comparava o timestamp desconsiderando o offset, gerando erro de data no futuro. Agora o XML sempre força o timezone de Brasília (`America/Sao_Paulo`) antes da formatação, garantindo conformidade estrita com o fuso local brasileiro.
+
 ## [1.6.2] — 2026-05-06
 
 ### Correções

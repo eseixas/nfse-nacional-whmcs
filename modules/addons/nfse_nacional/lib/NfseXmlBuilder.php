@@ -59,7 +59,19 @@ class NfseXmlBuilder
         // Tributos
         $vServ      = number_format((float)$invoice['total'], 2, '.', '');
         $pTotTribSN = number_format((float)($this->config['perc_trib_sn'] ?? 6), 2, '.', '');
-        $opSimpNac  = $this->dropdownVal($this->config['optante_simples']       ?? '1');
+        // opSimpNac: 1 = Nao Optante, 2 = MEI, 3 = ME/EPP
+        $rawOpSimp  = $this->dropdownVal($this->config['optante_simples'] ?? '3');
+        if ($rawOpSimp === '1') {
+            // Legado: 1 era "Sim", assumimos ME/EPP (3)
+            $opSimpNac = '3';
+        } elseif ($rawOpSimp === '2') {
+            // Legado: 2 era "Nao", mapeamos para Nao Optante (1)
+            $opSimpNac = '1';
+        } else {
+            // Novos valores: 'nao' => '1', 'mei' => '2', 'meepp' => '3'
+            $map = ['nao' => '1', 'mei' => '2', 'meepp' => '3'];
+            $opSimpNac = $map[$rawOpSimp] ?? '3';
+        }
         $regApTrib  = $this->dropdownVal($this->config['regime_tributario']    ?? '1');
         // Codigos de servico: busca config por produto, fallback para config global
         $productId = 0;
@@ -109,7 +121,9 @@ class NfseXmlBuilder
         $x .= '<IM>' . $im . '</IM>';
         $x .= '<regTrib>';
         $x .= '<opSimpNac>' . $opSimpNac . '</opSimpNac>';
-        $x .= '<regApTribSN>' . $regApTrib . '</regApTribSN>';
+        if ($opSimpNac !== '1') {
+            $x .= '<regApTribSN>' . $regApTrib . '</regApTribSN>';
+        }
         $x .= '<regEspTrib>0</regEspTrib>';
         $x .= '</regTrib>';
         $x .= '</prest>';
