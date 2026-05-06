@@ -33,7 +33,7 @@ class CertManager
             return ['success' => false, 'message' => 'Erro no upload: ' . $this->uploadError($file['error'] ?? -1)];
         }
 
-        // Valida extensaoo
+        // Valida extensão
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if (!in_array($ext, ['pfx', 'p12'])) {
             return ['success' => false, 'message' => 'Arquivo invalido. Use .pfx ou .p12'];
@@ -49,7 +49,7 @@ class CertManager
         // Testa leitura do certificado com a senha
         $certs = [];
         if (!openssl_pkcs12_read($content, $certs, $password)) {
-            return ['success' => false, 'message' => 'Naoo foi poss??vel ler o certificado. Verifique a senha informada.'];
+            return ['success' => false, 'message' => 'Não foi possível ler o certificado. Verifique a senha informada.'];
         }
 
         // Valida validade do certificado
@@ -69,7 +69,7 @@ class CertManager
 
         // Salva o arquivo
         if (file_put_contents($this->certFile, $content) === false) {
-            return ['success' => false, 'message' => 'Erro ao salvar certificado no servidor. Verifique permissoeses da pasta.'];
+            return ['success' => false, 'message' => 'Erro ao salvar certificado no servidor. Verifique permissões da pasta.'];
         }
         chmod($this->certFile, 0600);
 
@@ -141,7 +141,7 @@ class CertManager
     public function read(): array
     {
         if (!$this->exists()) {
-            throw new \Exception('Certificado digital naoo encontrado. Faca o upload primeiro.');
+            throw new \Exception('Certificado digital não encontrado. Faça o upload primeiro.');
         }
 
         $pfxContent = file_get_contents($this->certFile);

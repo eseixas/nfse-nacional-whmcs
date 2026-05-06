@@ -504,4 +504,6 @@ class NfseService
     }
 }
 
-function now() { return date('Y-m-d H:i:s'); }
+if (!function_exists('now')) {
+    function now() { return date('Y-m-d H:i:s'); }
+}

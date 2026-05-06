@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
 
 /**
@@ -35,9 +35,9 @@ class NfseXmlBuilder
         $im        = preg_replace('/\D/', '', $this->config['im']);
         $cLocEmi   = preg_replace('/\D/', '', $this->config['codigo_municipio_prestacao'] ?? '3106200');
 
-        // Subtrai 60s para evitar E0008 (clock skew entre servidor WHMCS e Receita Federal)
-        $dhEmi     = date('Y-m-d\TH:i:sP', time() - 60);
-        $dCompet   = date('Y-m-d', time() - 60);
+        // Subtrai 600s (10 min) para evitar E0008 (clock skew entre servidor WHMCS e Receita Federal)
+        $dhEmi     = date('Y-m-d\TH:i:sP', time() - 600);
+        $dCompet   = date('Y-m-d', time() - 600);
         $serie     = trim($this->config['serie'] ?? '2') ?: '2';
         $seriePad  = str_pad($serie, 5, '0', STR_PAD_LEFT);
         $nDpsPad   = str_pad($nDps, 15, '0', STR_PAD_LEFT);
@@ -77,7 +77,7 @@ class NfseXmlBuilder
             : ($this->config['codigo_tributacao_nacional'] ?? '010801');
         $cTribMun = !empty($prodCfg->codigo_tributacao_municipio)
             ? $prodCfg->codigo_tributacao_municipio
-            : ($this->config['codigo_tributacao_municipio'] ?? '010800001');
+            : ($this->config['codigo_tributacao_municipio'] ?? '001');
         $cNbs = !empty($prodCfg->codigo_nbs)
             ? $prodCfg->codigo_nbs
             : ($this->config['codigo_nbs'] ?? '115023000');
@@ -392,7 +392,6 @@ class NfseXmlBuilder
 
         // Normaliza nome: lowercase + remove acentos via transliteracao simples
         $n = strtolower(trim($city));
-        $from = array('a','a','a','a','a','e','e','e','i','i','o','o','o','o','u','u','c','n');
         // Substitui caracteres acentuados codificados em UTF-8
         // Mapeia caracteres acentuados UTF-8 para ASCII via strtr
         // Cada chave e uma sequencia UTF-8 de 2 bytes representada como hex literal

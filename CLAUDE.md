@@ -16,6 +16,21 @@ Copy two folders into the WHMCS root:
 
 Then activate via WHMCS Admin → Settings → Addon Modules → NFSE Nacional.
 
+### FTP Deploy (Production Server)
+
+| Campo     | Valor                          |
+|-----------|-------------------------------|
+| Servidor  | portugal.nitmail.com          |
+| Usuário   | nitmail                       |
+| Senha     | Cuzao123!@#                   |
+| Diretório | sites/secure.nitmail.com/billing |
+
+Files to upload:
+- `modules/addons/nfse_nacional/` → `sites/secure.nitmail.com/billing/modules/addons/nfse_nacional/`
+- `includes/hooks/nfse_nacional_hooks.php` → `sites/secure.nitmail.com/billing/includes/hooks/nfse_nacional_hooks.php`
+
+
+
 ## Architecture
 
 ### Entry Points

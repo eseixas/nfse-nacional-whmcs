@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.6.0
+ * @version 1.6.2
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6',
+        'version'     => '1.6.2',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -77,11 +77,11 @@ function nfse_nacional_config()
                 'Description'  => 'Ex: 01.08 = Suporte tecnico em informatica (LC 116)',
             ],
             'codigo_tributacao_municipio' => [
-                'FriendlyName' => 'Codigo Tributacao Municipio',
+                'FriendlyName' => 'Codigo Tributacao Municipio (cTribMun)',
                 'Type'         => 'text',
                 'Size'         => '20',
-                'Default'      => '010800001',
-                'Description'  => 'Codigo de tributacao do municipio conforme padrao NFSe Nacional',
+                'Default'      => '001',
+                'Description'  => '3 digitos do desdobramento municipal (ex: BH item 01.08 = 001). Consulte a correlacao em bhissdigital.pbh.gov.br ou na prefeitura.',
             ],
             'codigo_tributacao_nacional' => [
                 'FriendlyName' => 'Codigo Tributacao Nacional',

@@ -987,7 +987,7 @@ class NfseController
         exit;
     }
 
-        // =========================================================================
+    // =========================================================================
     // Configuracao de Servicos por Produto WHMCS
     // =========================================================================
 
@@ -1279,13 +1279,13 @@ class NfseController
                     </thead>
                     <tbody>
                     <?php foreach ($overrides as $o):
+                        $clienteRemovido = ($o->firstname === null && $o->lastname === null);
                         $nome = trim(($o->firstname ?? '') . ' ' . ($o->lastname ?? ''));
                         if (!empty($o->companyname)) $nome .= ' (' . $o->companyname . ')';
-                        if ($nome === '') $nome = '<em class="text-muted">cliente removido</em>';
                     ?>
                         <tr>
                             <td>#<?= (int)$o->client_id ?></td>
-                            <td><?= $nome === '<em class="text-muted">cliente removido</em>' ? $nome : htmlspecialchars($nome) ?>
+                            <td><?= $clienteRemovido ? '<em class="text-muted">cliente removido</em>' : htmlspecialchars($nome) ?>
                                 <?php if (!empty($o->email)): ?>
                                     <br><small class="text-muted"><?= htmlspecialchars($o->email) ?></small>
                                 <?php endif; ?>
@@ -1355,7 +1355,7 @@ class NfseController
         <?php
     }
 
-        private function renderNav(): void
+    private function renderNav(): void
     {
         $l       = $this->modulelink;
         $current = $_GET['action'] ?? '';

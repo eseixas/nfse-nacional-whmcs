@@ -6,6 +6,10 @@ modules/addons/nfse_nacional/certs/
 *.cer
 *.crt
 
+# WHMCS
+.whmcs-ignore
+*.ps1
+
 # Arquivos de debug gerados pelo addon
 modules/addons/nfse_nacional/debug/
 

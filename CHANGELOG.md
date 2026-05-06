@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.2] — 2026-05-06
+
+### Correções
+
+- **cTribMun (RNG6110)** — valor padrão de `codigo_tributacao_municipio` corrigido de `010800001` (9 dígitos, inválido pelo schema `TCCodTribMun`) para `001` (3 dígitos, desdobramento municipal).
+- **Clock Skew (E0008)** — ajuste do offset de tempo de 60s para 600s (10 minutos) para evitar erro de data de emissão posterior ao processamento em servidores com relógio dessincronizado.
+- **Deploy FTP** — script de deploy (`deploy_ftp.ps1`) reescrito para utilizar `lftp` via WSL, garantindo maior estabilidade e suporte a mirror incremental. Credenciais de produção atualizadas no `CLAUDE.md`.
+
 ## [1.6] — 2026-04-30
 
 ### Correções
