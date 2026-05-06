@@ -1116,6 +1116,11 @@ class NfseController
         $modoPadraoKey = (strpos($modoPadraoRaw, '=') !== false)
             ? trim(explode('=', $modoPadraoRaw)[0])
             : trim($modoPadraoRaw);
+
+        if ($modoPadraoKey === 'Ao emitir a fatura') $modoPadraoKey = 'invoice';
+        if ($modoPadraoKey === 'Ao pagar a fatura') $modoPadraoKey = 'paid';
+        if ($modoPadraoKey === 'Manual') $modoPadraoKey = 'manual';
+
         if (!in_array($modoPadraoKey, ['manual', 'invoice', 'paid'], true)) {
             $modoPadraoKey = 'manual';
         }

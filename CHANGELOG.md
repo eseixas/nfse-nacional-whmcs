@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.6] — 2026-05-06
+
+### Correções
+
+- **Mapeamento de Configurações** — Adicionado suporte robusto para campos do dropdown de configuração (`regime_tributario`, `tp_ret_issqn`, `ambiente` e `emissao_automatica`) em `NfseXmlBuilder`, `NfseController` e hooks, permitindo a transição entre valores numéricos legados e novas chaves textuais limpas.
+
 ## [1.6.5] — 2026-05-06
 
 ### Melhorias

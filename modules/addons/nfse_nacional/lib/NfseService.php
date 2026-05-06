@@ -69,7 +69,7 @@ class NfseService
     {
         if (!isset($this->api)) {
             $this->api = new NfseApiClient(
-                $this->config['ambiente'] ?? 'producao_restrita',
+                $this->config['ambiente'] ?? 'Producao Restrita (Testes)',
                 $this->certMgr->getCertPath(),
                 $this->certMgr->getPassword()
             );
@@ -401,10 +401,10 @@ class NfseService
             $this->debugWrite('debug_cancel_' . $invoiceId . '.xml', $xmlAssinado);
 
             $chaveUrl = preg_match('/^NFS(.{50})$/i', $chaveAcesso, $mxd) ? $mxd[1] : $chaveAcesso;
-            $ambienteRaw = $this->config['ambiente'] ?? 'producao_restrita';
+            $ambienteRaw = $this->config['ambiente'] ?? 'Producao Restrita (Testes)';
             $ambiente    = (strpos($ambienteRaw, '=') !== false)
                 ? trim(explode('=', $ambienteRaw)[0]) : trim($ambienteRaw);
-            $baseUrl   = ($ambiente === 'producao')
+            $baseUrl   = ($ambiente === 'producao' || $ambiente === 'Producao')
                 ? 'https://sefin.nfse.gov.br/SefinNacional/'
                 : 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/';
             $debugUrl  = 'debug_cancel_url_' . $invoiceId . '.txt';

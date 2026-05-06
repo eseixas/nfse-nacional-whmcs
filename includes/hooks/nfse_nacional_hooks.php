@@ -267,6 +267,10 @@ function nfse_nacional_normalizar_modo(string $valor): string
         return 'manual';
     }
 
+    if ($valor === 'Ao emitir a fatura') return 'invoice';
+    if ($valor === 'Ao pagar a fatura') return 'paid';
+    if ($valor === 'Manual') return 'manual';
+
     return in_array($valor, ['manual', 'invoice', 'paid']) ? $valor : 'manual';
 }
 

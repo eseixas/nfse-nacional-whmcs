@@ -51,10 +51,9 @@ class NfseXmlBuilder
         $idDps  = 'DPS' . $cLocEmiPad . $tpInsc . str_pad($cnpj, 14, '0', STR_PAD_LEFT) . $seriePad . $nDpsPad;
 
         // Ambiente: producao=1, qualquer outro=2 (producao restrita / homologacao)
-        $ambNorm = (strpos($this->config['ambiente'] ?? '', '=') !== false)
-            ? trim(explode('=', $this->config['ambiente'])[0])
-            : trim($this->config['ambiente'] ?? '');
-        $tpAmb = ($ambNorm === 'producao') ? '1' : '2';
+        $rawAmb = $this->config['ambiente'] ?? 'Producao Restrita (Testes)';
+        $ambNorm = (strpos($rawAmb, '=') !== false) ? trim(explode('=', $rawAmb)[0]) : trim($rawAmb);
+        $tpAmb = ($ambNorm === 'producao' || $ambNorm === 'Producao') ? '1' : '2';
 
         // Tributos
         $vServ      = number_format((float)$invoice['total'], 2, '.', '');
@@ -72,7 +71,15 @@ class NfseXmlBuilder
         } else {
             $opSimpNac = '3';
         }
-        $regApTrib  = $this->dropdownVal($this->config['regime_tributario']    ?? '1');
+        $rawReg = $this->dropdownVal($this->config['regime_tributario'] ?? 'Simples Nacional');
+        if ($rawReg === '1' || $rawReg === 'Simples Nacional') {
+            $regApTrib = '1';
+        } elseif ($rawReg === '2' || $rawReg === 'Simples Nacional - Excesso') {
+            $regApTrib = '2';
+        } else {
+            $regApTrib = '3';
+        }
+
         // Codigos de servico: busca config por produto, fallback para config global
         $productId = 0;
         if (!empty($invoice['items'])) {
@@ -97,7 +104,15 @@ class NfseXmlBuilder
             ? $prodCfg->codigo_nbs
             : ($this->config['codigo_nbs'] ?? '115023000');
         $xDescServ  = $this->buildDiscriminacao($invoice);
-        $tpRetISSQN = $this->dropdownVal($this->config['tp_ret_issqn'] ?? '1');
+        
+        $rawRet = $this->dropdownVal($this->config['tp_ret_issqn'] ?? 'Nao retido');
+        if ($rawRet === '1' || $rawRet === 'Nao retido') {
+            $tpRetISSQN = '1';
+        } elseif ($rawRet === '2' || $rawRet === 'Retido pelo tomador') {
+            $tpRetISSQN = '2';
+        } else {
+            $tpRetISSQN = '3';
+        }
 
         // Tomador
         list($tomadorXml, $cMunToma) = $this->buildTomador($client);
@@ -183,10 +198,9 @@ class NfseXmlBuilder
     public function buildCancelamento($nNFSe, $chaveAcesso = '', $nDFSe = '')
     {
         $cnpj    = preg_replace('/\D/', '', $this->config['cnpj']);
-        $ambNorm2 = (strpos($this->config['ambiente'] ?? '', '=') !== false)
-            ? trim(explode('=', $this->config['ambiente'])[0])
-            : trim($this->config['ambiente'] ?? '');
-        $tpAmb   = ($ambNorm2 === 'producao') ? '1' : '2';
+        $rawAmb = $this->config['ambiente'] ?? 'Producao Restrita (Testes)';
+        $ambNorm2 = (strpos($rawAmb, '=') !== false) ? trim(explode('=', $rawAmb)[0]) : trim($rawAmb);
+        $tpAmb   = ($ambNorm2 === 'producao' || $ambNorm2 === 'Producao') ? '1' : '2';
         $dhEvento = date('Y-m-d\TH:i:sP', time() - 30);
 
         // chave SEM prefixo NFS - 50 digitos (formato correto para o XML e para a URL)
