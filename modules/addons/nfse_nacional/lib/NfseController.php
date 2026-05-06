@@ -96,7 +96,7 @@ class NfseController
         // Alerta homologacao
         $ambRaw = $this->config['ambiente'] ?? '';
         $ambKey = (strpos($ambRaw, '=') !== false) ? trim(explode('=', $ambRaw)[0]) : trim($ambRaw);
-        if ($ambKey !== 'producao'): ?>
+        if ($ambKey !== 'producao' && $ambKey !== 'Producao'): ?>
         <div class="alert alert-info">
             <i class="fa fa-flask"></i>
             <strong>Modo Producao Restrita</strong> - Notas sao apenas para testes. Mude para Producao em

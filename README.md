@@ -1,4 +1,4 @@
-# NFSe Nacional — Addon WHMCS v1.6.6
+# NFSe Nacional — Addon WHMCS v1.6.7
 
 Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 ICP-Brasil).
 

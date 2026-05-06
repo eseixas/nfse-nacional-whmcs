@@ -128,7 +128,7 @@ add_hook('AdminAreaPage', 1, function ($vars) {
 
     $ambRaw = $config['ambiente'] ?? '';
     $ambKey = (strpos($ambRaw, '=') !== false) ? trim(explode('=', $ambRaw)[0]) : trim($ambRaw);
-    $env    = ($ambKey === 'producao') ? 'Producao' : 'Prod. Restrita';
+    $env    = ($ambKey === 'producao' || $ambKey === 'Producao') ? 'Producao' : 'Prod. Restrita';
 
     $modoRaw = $config['emissao_automatica'] ?? '';
     $modo    = nfse_nacional_normalizar_modo($modoRaw);

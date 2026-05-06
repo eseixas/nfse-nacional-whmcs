@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.7] — 2026-05-06
+
+### Correções
+
+- **Mapeamento do Alerta de Ambiente** — Corrigida a validação nas views do painel (Controller e Hooks) que exibia incorretamente o aviso de "Produção Restrita" mesmo quando configurado para Produção.
+
 ## [1.6.6] — 2026-05-06
 
 ### Correções

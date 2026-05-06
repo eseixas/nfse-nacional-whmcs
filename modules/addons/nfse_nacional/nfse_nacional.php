@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6.6',
+        'version'     => '1.6.7',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
