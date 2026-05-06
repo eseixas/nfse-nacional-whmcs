@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.3] — 2026-05-06
+
+### Correções
+
+- **Clock Skew Timezone (E0008)** — corrigido bug onde o servidor PHP em UTC gerava data/hora correta globalmente (`+00:00`), mas a API da SefinNacional comparava o timestamp desconsiderando o offset, gerando erro de data no futuro. Agora o XML sempre força o timezone de Brasília (`America/Sao_Paulo`) antes da formatação, garantindo conformidade estrita com o fuso local brasileiro.
 ## [1.6.2] — 2026-05-06
 
 ### Correções

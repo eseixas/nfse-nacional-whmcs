@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
 
 /**
@@ -35,9 +35,12 @@ class NfseXmlBuilder
         $im        = preg_replace('/\D/', '', $this->config['im']);
         $cLocEmi   = preg_replace('/\D/', '', $this->config['codigo_municipio_prestacao'] ?? '3106200');
 
-        // Subtrai 600s (10 min) para evitar E0008 (clock skew entre servidor WHMCS e Receita Federal)
-        $dhEmi     = date('Y-m-d\TH:i:sP', time() - 600);
-        $dCompet   = date('Y-m-d', time() - 600);
+        // Subtrai 600s (10 min) para evitar E0008 (clock skew) e forca timezone de Brasilia
+        // A API da SefinNacional parece ignorar o offset +00:00 e faz comparacao de string, entao forcamos -03:00
+        $dt = new \DateTime('@' . (time() - 600));
+        $dt->setTimezone(new \DateTimeZone('America/Sao_Paulo'));
+        $dhEmi     = $dt->format('Y-m-d\TH:i:sP');
+        $dCompet   = $dt->format('Y-m-d');
         $serie     = trim($this->config['serie'] ?? '2') ?: '2';
         $seriePad  = str_pad($serie, 5, '0', STR_PAD_LEFT);
         $nDpsPad   = str_pad($nDps, 15, '0', STR_PAD_LEFT);
