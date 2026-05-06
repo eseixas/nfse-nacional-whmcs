@@ -96,7 +96,7 @@ class NfseController
         // Alerta homologacao
         $ambRaw = $this->config['ambiente'] ?? '';
         $ambKey = (strpos($ambRaw, '=') !== false) ? trim(explode('=', $ambRaw)[0]) : trim($ambRaw);
-        if ($ambKey !== 'producao'): ?>
+        if ($ambKey !== 'producao' && $ambKey !== 'Producao'): ?>
         <div class="alert alert-info">
             <i class="fa fa-flask"></i>
             <strong>Modo Producao Restrita</strong> - Notas sao apenas para testes. Mude para Producao em
@@ -987,7 +987,7 @@ class NfseController
         exit;
     }
 
-        // =========================================================================
+    // =========================================================================
     // Configuracao de Servicos por Produto WHMCS
     // =========================================================================
 
@@ -1116,6 +1116,11 @@ class NfseController
         $modoPadraoKey = (strpos($modoPadraoRaw, '=') !== false)
             ? trim(explode('=', $modoPadraoRaw)[0])
             : trim($modoPadraoRaw);
+
+        if ($modoPadraoKey === 'Ao emitir a fatura') $modoPadraoKey = 'invoice';
+        if ($modoPadraoKey === 'Ao pagar a fatura') $modoPadraoKey = 'paid';
+        if ($modoPadraoKey === 'Manual') $modoPadraoKey = 'manual';
+
         if (!in_array($modoPadraoKey, ['manual', 'invoice', 'paid'], true)) {
             $modoPadraoKey = 'manual';
         }
@@ -1279,13 +1284,13 @@ class NfseController
                     </thead>
                     <tbody>
                     <?php foreach ($overrides as $o):
+                        $clienteRemovido = ($o->firstname === null && $o->lastname === null);
                         $nome = trim(($o->firstname ?? '') . ' ' . ($o->lastname ?? ''));
                         if (!empty($o->companyname)) $nome .= ' (' . $o->companyname . ')';
-                        if ($nome === '') $nome = '<em class="text-muted">cliente removido</em>';
                     ?>
                         <tr>
                             <td>#<?= (int)$o->client_id ?></td>
-                            <td><?= $nome === '<em class="text-muted">cliente removido</em>' ? $nome : htmlspecialchars($nome) ?>
+                            <td><?= $clienteRemovido ? '<em class="text-muted">cliente removido</em>' : htmlspecialchars($nome) ?>
                                 <?php if (!empty($o->email)): ?>
                                     <br><small class="text-muted"><?= htmlspecialchars($o->email) ?></small>
                                 <?php endif; ?>
@@ -1355,7 +1360,7 @@ class NfseController
         <?php
     }
 
-        private function renderNav(): void
+    private function renderNav(): void
     {
         $l       = $this->modulelink;
         $current = $_GET['action'] ?? '';

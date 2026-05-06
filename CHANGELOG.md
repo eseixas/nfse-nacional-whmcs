@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.6.7] — 2026-05-06
+
+### Correções
+
+- **Mapeamento do Alerta de Ambiente** — Corrigida a validação nas views do painel (Controller e Hooks) que exibia incorretamente o aviso de "Produção Restrita" mesmo quando configurado para Produção.
+
+## [1.6.6] — 2026-05-06
+
+### Correções
+
+- **Mapeamento de Configurações** — Adicionado suporte robusto para campos do dropdown de configuração (`regime_tributario`, `tp_ret_issqn`, `ambiente` e `emissao_automatica`) em `NfseXmlBuilder`, `NfseController` e hooks, permitindo a transição entre valores numéricos legados e novas chaves textuais limpas.
+
+## [1.6.5] — 2026-05-06
+
+### Melhorias
+
+- **Visualização das Opções do Simples Nacional** — As chaves das opções foram removidas do dropdown de configuração (`optante_simples`) para evitar exibição duplicada/confusa no painel do WHMCS. As opções agora são exibidas puramente como valores legíveis ("Optante (ME/EPP)", "Optante (MEI)", "Nao Optante"). O código do `NfseXmlBuilder.php` foi ajustado para mapear estes textos diretamente para os códigos `opSimpNac` da SefinNacional.
+## [1.6.4] — 2026-05-06
+
+### Correções
+
+- **Opção Simples Nacional (E0160)** — corrigido o mapeamento do campo `opSimpNac` enviado à Receita. O valor `1` no WHMCS (que antes era exibido como "Sim") estava sendo enviado como "Não Optante" (`1` no schema), causando erro E0160 por divergência com o cadastro da Receita. Foram introduzidas novas chaves na configuração (`meepp`, `mei`, `nao`) para clarificar a exibição e adicionado tratamento retroativo em `NfseXmlBuilder.php` para mapear corretamente o `1` (antigo "Sim") para `3` (Optante ME/EPP) e o `2` (antigo "Não") para `1` (Não Optante). A tag `<regApTribSN>` agora é corretamente omitida para Não Optantes.
+## [1.6.3] — 2026-05-06
+
+### Correções
+
+- **Clock Skew Timezone (E0008)** — corrigido bug onde o servidor PHP em UTC gerava data/hora correta globalmente (`+00:00`), mas a API da SefinNacional comparava o timestamp desconsiderando o offset, gerando erro de data no futuro. Agora o XML sempre força o timezone de Brasília (`America/Sao_Paulo`) antes da formatação, garantindo conformidade estrita com o fuso local brasileiro.
+
+## [1.6.2] — 2026-05-06
+
+### Correções
+
+- **cTribMun (RNG6110)** — valor padrão de `codigo_tributacao_municipio` corrigido de `010800001` (9 dígitos, inválido pelo schema `TCCodTribMun`) para `001` (3 dígitos, desdobramento municipal).
+- **Clock Skew (E0008)** — ajuste do offset de tempo de 60s para 600s (10 minutos) para evitar erro de data de emissão posterior ao processamento em servidores com relógio dessincronizado.
+- **Deploy FTP** — script de deploy (`deploy_ftp.ps1`) reescrito para utilizar `lftp` via WSL, garantindo maior estabilidade e suporte a mirror incremental. Credenciais de produção atualizadas no `CLAUDE.md`.
+
 ## [1.6] — 2026-04-30
 
 ### Correções

@@ -38,7 +38,9 @@ class NfseApiClient
         $this->ambiente      = $ambienteNorm;
         $this->certPath      = $certPath;
         $this->certPassword  = $certPassword;
-        $this->baseUrl       = ($ambienteNorm === 'producao')
+
+        // URL base: se producao usa nfse.gov.br, senao producaorestrita.nfse.gov.br
+        $this->baseUrl       = ($ambienteNorm === 'producao' || $ambienteNorm === 'Producao')
             ? self::URL_PRODUCAO
             : self::URL_PRODUCAO_RESTRITA;
     }

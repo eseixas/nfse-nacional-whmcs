@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.6.0
+ * @version 1.6.5
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6',
+        'version'     => '1.6.7',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -46,8 +46,8 @@ function nfse_nacional_config()
             'regime_tributario' => [
                 'FriendlyName' => 'Regime Tributario',
                 'Type'         => 'dropdown',
-                'Options'      => '1=Simples Nacional,2=Simples Nacional - Excesso,3=Normal',
-                'Default'      => '1',
+                'Options'      => 'Simples Nacional,Simples Nacional - Excesso,Normal',
+                'Default'      => 'Simples Nacional',
             ],
             'aliquota_iss' => [
                 'FriendlyName' => 'Aliquota ISS (%)',
@@ -59,14 +59,15 @@ function nfse_nacional_config()
             'optante_simples' => [
                 'FriendlyName' => 'Optante pelo Simples Nacional',
                 'Type'         => 'dropdown',
-                'Options'      => '1=Sim,2=Nao',
-                'Default'      => '1',
+                'Options'      => 'Optante (ME/EPP),Optante (MEI),Nao Optante',
+                'Default'      => 'Optante (ME/EPP)',
+                'Description'  => 'Status no Simples Nacional',
             ],
             'incentivador_cultural' => [
                 'FriendlyName' => 'Incentivador Cultural',
                 'Type'         => 'dropdown',
-                'Options'      => '1=Sim,2=Nao',
-                'Default'      => '2',
+                'Options'      => 'Sim,Nao',
+                'Default'      => 'Nao',
             ],
             // -- Servico ----------------------------------------------------
             'item_lista_servico' => [
@@ -77,11 +78,11 @@ function nfse_nacional_config()
                 'Description'  => 'Ex: 01.08 = Suporte tecnico em informatica (LC 116)',
             ],
             'codigo_tributacao_municipio' => [
-                'FriendlyName' => 'Codigo Tributacao Municipio',
+                'FriendlyName' => 'Codigo Tributacao Municipio (cTribMun)',
                 'Type'         => 'text',
                 'Size'         => '20',
-                'Default'      => '010800001',
-                'Description'  => 'Codigo de tributacao do municipio conforme padrao NFSe Nacional',
+                'Default'      => '001',
+                'Description'  => '3 digitos do desdobramento municipal (ex: BH item 01.08 = 001). Consulte a correlacao em bhissdigital.pbh.gov.br ou na prefeitura.',
             ],
             'codigo_tributacao_nacional' => [
                 'FriendlyName' => 'Codigo Tributacao Nacional',
@@ -107,8 +108,8 @@ function nfse_nacional_config()
             'tp_ret_issqn' => [
                 'FriendlyName' => 'Tipo Retencao ISSQN',
                 'Type'         => 'dropdown',
-                'Options'      => '1=Nao retido,2=Retido pelo tomador,3=Retido pelo intermediario',
-                'Default'      => '1',
+                'Options'      => 'Nao retido,Retido pelo tomador,Retido pelo intermediario',
+                'Default'      => 'Nao retido',
                 'Description'  => 'tpRetISSQN: indica se o ISS e retido na fonte.',
             ],
             'discriminacao_padrao' => [
@@ -129,16 +130,16 @@ function nfse_nacional_config()
             'ambiente' => [
                 'FriendlyName' => 'Ambiente',
                 'Type'         => 'dropdown',
-                'Options'      => 'producao_restrita=Producao Restrita (Testes),producao=Producao',
-                'Default'      => 'producao_restrita',
+                'Options'      => 'Producao Restrita (Testes),Producao',
+                'Default'      => 'Producao Restrita (Testes)',
                 'Description'  => 'Use Homologacao ate validar o funcionamento',
             ],
             // -- Emissao ----------------------------------------------------
             'emissao_automatica' => [
                 'FriendlyName' => 'Modo de Emissao',
                 'Type'         => 'dropdown',
-                'Options'      => 'manual=Manual,invoice=Ao emitir a fatura,paid=Ao pagar a fatura',
-                'Default'      => 'paid',
+                'Options'      => 'Manual,Ao emitir a fatura,Ao pagar a fatura',
+                'Default'      => 'Ao pagar a fatura',
                 'Description'  => 'Manual: emita pelo dashboard. Ao criar: emite ao gerar a fatura. Ao pagar: emite quando a fatura for paga.',
             ],
 

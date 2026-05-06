@@ -35,9 +35,12 @@ class NfseXmlBuilder
         $im        = preg_replace('/\D/', '', $this->config['im']);
         $cLocEmi   = preg_replace('/\D/', '', $this->config['codigo_municipio_prestacao'] ?? '3106200');
 
-        // Subtrai 60s para evitar E0008 (clock skew entre servidor WHMCS e Receita Federal)
-        $dhEmi     = date('Y-m-d\TH:i:sP', time() - 60);
-        $dCompet   = date('Y-m-d', time() - 60);
+        // Subtrai 600s (10 min) para evitar E0008 (clock skew) e forca timezone de Brasilia
+        // A API da SefinNacional parece ignorar o offset +00:00 e faz comparacao de string, entao forcamos -03:00
+        $dt = new \DateTime('@' . (time() - 600));
+        $dt->setTimezone(new \DateTimeZone('America/Sao_Paulo'));
+        $dhEmi     = $dt->format('Y-m-d\TH:i:sP');
+        $dCompet   = $dt->format('Y-m-d');
         $serie     = trim($this->config['serie'] ?? '2') ?: '2';
         $seriePad  = str_pad($serie, 5, '0', STR_PAD_LEFT);
         $nDpsPad   = str_pad($nDps, 15, '0', STR_PAD_LEFT);
@@ -48,16 +51,35 @@ class NfseXmlBuilder
         $idDps  = 'DPS' . $cLocEmiPad . $tpInsc . str_pad($cnpj, 14, '0', STR_PAD_LEFT) . $seriePad . $nDpsPad;
 
         // Ambiente: producao=1, qualquer outro=2 (producao restrita / homologacao)
-        $ambNorm = (strpos($this->config['ambiente'] ?? '', '=') !== false)
-            ? trim(explode('=', $this->config['ambiente'])[0])
-            : trim($this->config['ambiente'] ?? '');
-        $tpAmb = ($ambNorm === 'producao') ? '1' : '2';
+        $rawAmb = $this->config['ambiente'] ?? 'Producao Restrita (Testes)';
+        $ambNorm = (strpos($rawAmb, '=') !== false) ? trim(explode('=', $rawAmb)[0]) : trim($rawAmb);
+        $tpAmb = ($ambNorm === 'producao' || $ambNorm === 'Producao') ? '1' : '2';
 
         // Tributos
         $vServ      = number_format((float)$invoice['total'], 2, '.', '');
         $pTotTribSN = number_format((float)($this->config['perc_trib_sn'] ?? 6), 2, '.', '');
-        $opSimpNac  = $this->dropdownVal($this->config['optante_simples']       ?? '1');
-        $regApTrib  = $this->dropdownVal($this->config['regime_tributario']    ?? '1');
+        // opSimpNac: 1 = Nao Optante, 2 = MEI, 3 = ME/EPP
+        $rawOpSimp  = $this->dropdownVal($this->config['optante_simples'] ?? 'Optante (ME/EPP)');
+        if ($rawOpSimp === '1' || $rawOpSimp === 'meepp' || $rawOpSimp === 'Optante (ME/EPP)') {
+            // Legado: 1 era "Sim", assumimos ME/EPP (3)
+            $opSimpNac = '3';
+        } elseif ($rawOpSimp === '2' || $rawOpSimp === 'nao' || $rawOpSimp === 'Nao Optante') {
+            // Legado: 2 era "Nao", mapeamos para Nao Optante (1)
+            $opSimpNac = '1';
+        } elseif ($rawOpSimp === 'mei' || $rawOpSimp === 'Optante (MEI)') {
+            $opSimpNac = '2';
+        } else {
+            $opSimpNac = '3';
+        }
+        $rawReg = $this->dropdownVal($this->config['regime_tributario'] ?? 'Simples Nacional');
+        if ($rawReg === '1' || $rawReg === 'Simples Nacional') {
+            $regApTrib = '1';
+        } elseif ($rawReg === '2' || $rawReg === 'Simples Nacional - Excesso') {
+            $regApTrib = '2';
+        } else {
+            $regApTrib = '3';
+        }
+
         // Codigos de servico: busca config por produto, fallback para config global
         $productId = 0;
         if (!empty($invoice['items'])) {
@@ -77,12 +99,20 @@ class NfseXmlBuilder
             : ($this->config['codigo_tributacao_nacional'] ?? '010801');
         $cTribMun = !empty($prodCfg->codigo_tributacao_municipio)
             ? $prodCfg->codigo_tributacao_municipio
-            : ($this->config['codigo_tributacao_municipio'] ?? '010800001');
+            : ($this->config['codigo_tributacao_municipio'] ?? '001');
         $cNbs = !empty($prodCfg->codigo_nbs)
             ? $prodCfg->codigo_nbs
             : ($this->config['codigo_nbs'] ?? '115023000');
         $xDescServ  = $this->buildDiscriminacao($invoice);
-        $tpRetISSQN = $this->dropdownVal($this->config['tp_ret_issqn'] ?? '1');
+        
+        $rawRet = $this->dropdownVal($this->config['tp_ret_issqn'] ?? 'Nao retido');
+        if ($rawRet === '1' || $rawRet === 'Nao retido') {
+            $tpRetISSQN = '1';
+        } elseif ($rawRet === '2' || $rawRet === 'Retido pelo tomador') {
+            $tpRetISSQN = '2';
+        } else {
+            $tpRetISSQN = '3';
+        }
 
         // Tomador
         list($tomadorXml, $cMunToma) = $this->buildTomador($client);
@@ -106,7 +136,9 @@ class NfseXmlBuilder
         $x .= '<IM>' . $im . '</IM>';
         $x .= '<regTrib>';
         $x .= '<opSimpNac>' . $opSimpNac . '</opSimpNac>';
-        $x .= '<regApTribSN>' . $regApTrib . '</regApTribSN>';
+        if ($opSimpNac !== '1') {
+            $x .= '<regApTribSN>' . $regApTrib . '</regApTribSN>';
+        }
         $x .= '<regEspTrib>0</regEspTrib>';
         $x .= '</regTrib>';
         $x .= '</prest>';
@@ -166,10 +198,9 @@ class NfseXmlBuilder
     public function buildCancelamento($nNFSe, $chaveAcesso = '', $nDFSe = '')
     {
         $cnpj    = preg_replace('/\D/', '', $this->config['cnpj']);
-        $ambNorm2 = (strpos($this->config['ambiente'] ?? '', '=') !== false)
-            ? trim(explode('=', $this->config['ambiente'])[0])
-            : trim($this->config['ambiente'] ?? '');
-        $tpAmb   = ($ambNorm2 === 'producao') ? '1' : '2';
+        $rawAmb = $this->config['ambiente'] ?? 'Producao Restrita (Testes)';
+        $ambNorm2 = (strpos($rawAmb, '=') !== false) ? trim(explode('=', $rawAmb)[0]) : trim($rawAmb);
+        $tpAmb   = ($ambNorm2 === 'producao' || $ambNorm2 === 'Producao') ? '1' : '2';
         $dhEvento = date('Y-m-d\TH:i:sP', time() - 30);
 
         // chave SEM prefixo NFS - 50 digitos (formato correto para o XML e para a URL)
@@ -392,7 +423,6 @@ class NfseXmlBuilder
 
         // Normaliza nome: lowercase + remove acentos via transliteracao simples
         $n = strtolower(trim($city));
-        $from = array('a','a','a','a','a','e','e','e','i','i','o','o','o','o','u','u','c','n');
         // Substitui caracteres acentuados codificados em UTF-8
         // Mapeia caracteres acentuados UTF-8 para ASCII via strtr
         // Cada chave e uma sequencia UTF-8 de 2 bytes representada como hex literal
