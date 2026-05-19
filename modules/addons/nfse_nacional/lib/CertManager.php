@@ -129,7 +129,7 @@ class CertManager
     public function getPassword(): string
     {
         if (!file_exists($this->metaFile)) {
-            throw new \Exception('Nenhum certificado carregado. Faca o upload em Addons -> NFS-e BH -> Certificado Digital.');
+            throw new \Exception('Nenhum certificado carregado. Faca o upload em Addons -> NFSE Nacional -> Certificado Digital.');
         }
         $meta = json_decode(file_get_contents($this->metaFile), true);
         return $this->decryptPassword($meta['password'] ?? '');

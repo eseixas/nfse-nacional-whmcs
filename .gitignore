@@ -25,6 +25,8 @@ skills-lock.json
 .agents/
 .claude/
 .vscode/
+CLAUDE.md
+.codex
 
 # Dependencias (addon nao usa Composer)
 vendor/
