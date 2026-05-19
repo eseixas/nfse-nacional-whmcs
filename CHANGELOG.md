@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.8] — 2026-05-19
+
+### Limpeza
+
+- Removido JavaScript defensivo de remoção de botões PDF do `NfseController` e do widget de fatura — markup PHP que gerava esses botões já não existe, então o JS era dead code (eliminava FOUC e dependência de JS habilitado).
+- Substituída string legada "Addons -> NFS-e BH" por "Addons -> NFSE Nacional" em `CertManager` (mensagem de exceção quando o certificado não foi carregado).
+- Atualizado header do `nfse_nacional.php` (removida referência herdada a "Belo Horizonte") e mensagem de ativação do addon alinhada à versão atual.
+
 ## [1.6.7] — 2026-05-06
 
 ### Correções

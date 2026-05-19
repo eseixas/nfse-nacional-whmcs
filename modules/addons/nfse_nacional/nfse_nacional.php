@@ -1,10 +1,10 @@
 <?php
 /**
- * NFS-e Belo Horizonte - Addon WHMCS
+ * NFSE Nacional - Addon WHMCS
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.6.5
+ * @version 1.6.8
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6.7',
+        'version'     => '1.6.8',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -291,7 +291,7 @@ function nfse_nacional_activate()
     try {
         nfse_nacional_ensure_schema();
 
-        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.6 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.6.8 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }

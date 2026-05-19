@@ -2,7 +2,7 @@
     "schema": "1.0",
     "type": "whmcs-addons",
     "name": "nfse_nacional",
-    "version": "1.6",
+    "version": "1.6.8",
     "license": "GPL-3.0",
     "category": "addon",
     "description": {
