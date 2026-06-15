@@ -129,8 +129,10 @@ class CertManager
     {
         $paths = $this->activePaths();
         $storedMeta = [];
+        $encryptedPassword = '';
         if ($paths !== null) {
             $storedMeta = json_decode((string)file_get_contents($paths['meta']), true) ?? [];
+            $encryptedPassword = (string)($storedMeta['password'] ?? '');
             unset($storedMeta['password']);
         }
 
@@ -160,7 +162,7 @@ class CertManager
             return $status;
         }
 
-        $password = $this->decryptPassword($storedMeta['password'] ?? '');
+        $password = $this->decryptPassword($encryptedPassword);
         $certs = [];
         if (!openssl_pkcs12_read($pfxContent, $certs, $password)) {
             $status['state'] = 'unreadable';
