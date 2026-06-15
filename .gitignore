@@ -9,6 +9,8 @@ modules/addons/nfse_nacional/certs/
 # WHMCS
 .whmcs-ignore
 *.ps1
+!deploy.ps1
+!deploy_ftp.ps1
 
 # Arquivos de debug gerados pelo addon
 modules/addons/nfse_nacional/debug/
