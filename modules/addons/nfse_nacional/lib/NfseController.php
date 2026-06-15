@@ -36,7 +36,7 @@ class NfseController
     // Dashboard
     // =========================================================================
 
-    public function dashboard(): void
+    public function dashboard(?string $flashMsg = null, string $flashType = 'success', bool $flashRaw = false): void
     {
         $stats = [
             'emitidas'  => Capsule::table('mod_nfse_nacional')->where('status', 'emitida')->count(),
@@ -64,6 +64,10 @@ class NfseController
         $certOk     = $this->certMgr->isReady();
 
         $this->renderNav();
+
+        if ($flashMsg !== null) {
+            $this->flash($flashMsg, $flashType, $flashRaw);
+        }
 
         // Alerta CNPJ/IM nao configurado
         if (empty($this->config['cnpj']) || empty($this->config['im'])): ?>
@@ -332,40 +336,36 @@ class NfseController
     public function emitir(): void
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            $this->renderNav();
-            $this->flash('Metodo invalido.', 'danger');
-            $this->dashboard();
+            $this->dashboard('Metodo invalido.', 'danger');
             return;
         }
 
         try { $this->verifyCsrf(); } catch (\Exception $e) {
-            $this->renderNav(); $this->flash($e->getMessage(), 'danger', true); $this->dashboard(); return;
+            $this->dashboard($e->getMessage(), 'danger', true);
+            return;
         }
 
         $invoiceId = (int)($_POST['invoice_id'] ?? 0);
 
         if ($invoiceId <= 0) {
-            $this->renderNav();
-            $this->flash('Numero de fatura invalido.', 'danger');
-            $this->dashboard();
+            $this->dashboard('Numero de fatura invalido.', 'danger');
             return;
         }
 
         $result = $this->service->emitirParaFatura($invoiceId);
-        $this->renderNav();
-        $this->flash($result['message'], $result['success'] ? 'success' : 'danger');
-        $this->dashboard();
+        $this->dashboard($result['message'], $result['success'] ? 'success' : 'danger');
     }
 
     // =========================================================================
     // Exportar por periodo -> ZIP
     // =========================================================================
-    public function exportar(): void
+    public function exportar(?string $flashMsg = null, string $flashType = 'success', bool $flashRaw = false): void
     {
-        // POST = gera e envia o ZIP diretamente
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exportar'])) {
+        // POST = gera e envia o ZIP diretamente (flashMsg indica retorno de erro do gerarZip)
+        if ($flashMsg === null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exportar'])) {
             try { $this->verifyCsrf(); } catch (\Exception $e) {
-                $this->renderNav(); $this->flash($e->getMessage(), 'danger', true); $this->exportar(); return;
+                $this->exportar($e->getMessage(), 'danger', true);
+                return;
             }
             $this->gerarZip();
             return;
@@ -384,6 +384,10 @@ class NfseController
         $qtdMes     = count((array)$previewMes);
 
         $this->renderNav();
+
+        if ($flashMsg !== null) {
+            $this->flash($flashMsg, $flashType, $flashRaw);
+        }
         ?>
         <div class="panel panel-default">
             <div class="panel-heading">
@@ -516,23 +520,17 @@ class NfseController
         // Validacaoo basica de datas
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataInicio) ||
             !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataFim)) {
-            $this->renderNav();
-            $this->flash('Datas invalidas.', 'danger');
-            $this->exportar();
+            $this->exportar('Datas invalidas.', 'danger');
             return;
         }
         [$anoInicio, $mesInicio, $diaInicio] = array_map('intval', explode('-', $dataInicio));
         [$anoFim, $mesFim, $diaFim] = array_map('intval', explode('-', $dataFim));
         if (!checkdate($mesInicio, $diaInicio, $anoInicio) || !checkdate($mesFim, $diaFim, $anoFim)) {
-            $this->renderNav();
-            $this->flash('Datas invalidas.', 'danger');
-            $this->exportar();
+            $this->exportar('Datas invalidas.', 'danger');
             return;
         }
         if ($dataInicio > $dataFim) {
-            $this->renderNav();
-            $this->flash('A data inicial nao pode ser maior que a data final.', 'danger');
-            $this->exportar();
+            $this->exportar('A data inicial nao pode ser maior que a data final.', 'danger');
             return;
         }
         if (!in_array($statusFiltro, ['emitida', 'cancelada', 'todos'], true)) {
@@ -555,13 +553,11 @@ class NfseController
         $registros = $query->orderBy('emitida_em')->get();
 
         if (!count((array)$registros)) {
-            $this->renderNav();
-            $this->flash(
+            $this->exportar(
                 'Nenhuma NFS-e encontrada entre ' . date('d/m/Y', strtotime($dataInicio)) .
                 ' e ' . date('d/m/Y', strtotime($dataFim)) . '.',
                 'warning'
             );
-            $this->exportar();
             return;
         }
 
@@ -570,9 +566,7 @@ class NfseController
         $zip     = new \ZipArchive();
 
         if ($zip->open($zipTemp, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            $this->renderNav();
-            $this->flash('Erro ao criar o arquivo ZIP. Verifique permissoeses do servidor.', 'danger');
-            $this->exportar();
+            $this->exportar('Erro ao criar o arquivo ZIP. Verifique permissoeses do servidor.', 'danger');
             return;
         }
 
@@ -637,13 +631,11 @@ class NfseController
 
         if ($adicionados === 0) {
             @unlink($zipTemp);
-            $this->renderNav();
             $msg = 'Nenhum arquivo foi gerado para o periodo selecionado.';
             if ($falhas) {
                 $msg .= ' Falhas: ' . htmlspecialchars(implode(' | ', array_slice($falhas, 0, 5)));
             }
-            $this->flash($msg, 'warning', true);
-            $this->exportar();
+            $this->exportar($msg, 'warning', true);
             return;
         }
 
