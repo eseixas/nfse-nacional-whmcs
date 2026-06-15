@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0] — 2026-06-05
+
+### Funcionalidades
+
+- Reintroduzida a geração de PDF DANFSe a partir do XML autorizado da NFS-e, com QR-Code oficial para consulta pública nacional.
+- Adicionado download individual de PDF no dashboard, na visualização da NFS-e e no widget da fatura.
+- Exportação por período agora permite baixar ZIP de XMLs ou ZIP de PDFs DANFSe.
+
+### Segurança e Robustez
+
+- Parsing XML endurecido com `LIBXML_NONET` nos pontos de leitura de XML da API, banco e assinatura.
+- Certificados e arquivos de debug passam a aceitar caminho de armazenamento protegido fora do webroot, mantendo fallback para o diretório legado do addon.
+- Novos uploads de certificado agora exigem a criptografia nativa do WHMCS; o formato legado segue disponível apenas para leitura.
+- Consultas ViaCEP passam a usar cache por CEP para evitar chamadas síncronas repetidas durante emissão.
+
 ## [1.6.8] — 2026-05-19
 
 ### Limpeza

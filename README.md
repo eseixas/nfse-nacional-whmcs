@@ -1,4 +1,4 @@
-# NFSe Nacional — Addon WHMCS v1.6.8
+# NFSe Nacional — Addon WHMCS v1.7.0
 
 Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 ICP-Brasil).
 
@@ -11,15 +11,17 @@ Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) dir
 - **Widget na fatura** — botões de emitir, ver e baixar XML diretamente na tela de edição de fatura no admin
 - **Configuração por produto** — código de serviço (LC 116), tributação municipal/nacional e NBS individualmente por produto WHMCS
 - **Diagnóstico de conectividade** — testa DNS, TCP 443 e HTTPS para os endpoints da Receita Federal
-- **Exportar XML** — baixa ZIP com XMLs de todas as notas de um período
-- **Debug configurável** — salva arquivos `debug_*.xml/txt` apenas quando ativado, em subdiretório protegido `debug/` (desative em produção)
+- **PDF DANFSe** — gera PDF oficial com QR-Code para consulta pública nacional
+- **Exportar XML/PDF** — baixa ZIP com XMLs ou PDFs de todas as notas de um período
+- **Debug configurável** — salva arquivos `debug_*.xml/txt` apenas quando ativado, preferencialmente em armazenamento protegido fora do webroot (desative em produção)
 
 ---
 
 ## Requisitos
 
 - WHMCS 8.x ou superior
-- PHP 7.4+ com extensões: `openssl`, `curl`, `dom`, `zlib`, `mbstring`
+- PHP 7.4+ com extensões: `openssl`, `curl`, `dom`, `zlib`, `mbstring`, `zip`
+- TCPDF disponível no WHMCS para geração do DANFSe em PDF
 - Certificado digital **A1 ICP-Brasil** (arquivo `.pfx` / PKCS#12) do prestador de serviços
 - Município aderente ao **Padrão Nacional NFS-e** (`nfse.gov.br`)
 
@@ -56,6 +58,7 @@ includes/hooks/nfse_nacional_hooks.php
 | Ambiente | `Producao Restrita (Testes)` ou `Producao` |
 | Modo de Emissão | `Manual`, `Ao emitir a fatura` ou `Ao pagar a fatura` |
 | Debug | Ativa/desativa geração de arquivos de debug |
+| Caminho de Armazenamento Protegido | Caminho fora do webroot para certificados, debug e cache. Aceita `{ROOTDIR}` |
 | Número DPS Inicial | Evitar conflito com outro sistema emissor |
 
 ---
@@ -77,6 +80,7 @@ modules/addons/nfse_nacional/
 ├── nfse_nacional.php          ← Config, activate, output, migrations
 └── lib/
     ├── NfseApiClient.php      ← Cliente REST SefinNacional (mTLS direto)
+    ├── NfsePdfGenerator.php   ← Geração do DANFSe PDF com QR-Code oficial
     ├── NfseXmlBuilder.php     ← Geração do XML DPS (SPED v1.00)
     ├── NfseSigner.php         ← Assinatura RSA-SHA256 + C14N Exclusive WithComments
     ├── NfseService.php        ← Orquestra emissão, consulta e lógica de negócio
@@ -107,8 +111,9 @@ Tabelas criadas automaticamente na primeira carga:
 - O cancelamento de NFS-e via API (`POST /nfse/{chave}/eventos`) retorna HTTP 500 no servidor da Receita Federal para determinados cenários (bug confirmado). Use o [Emissor Nacional](https://www.nfse.gov.br/EmissorNacional) para cancelar manualmente quando necessário.
 - Emissão manual e emissão pelo hook de pagamento exigem fatura paga. O modo **Ao emitir a fatura** permite emissão antes do pagamento por decisão operacional do usuário.
 - Apenas municípios aderentes ao Padrão Nacional são suportados. Verifique em [nfse.gov.br](https://www.nfse.gov.br).
-- O certificado digital **não deve ser versionado**. O arquivo `.pfx` é armazenado na pasta `certs/` que está no `.gitignore`.
-- A senha do certificado usa `encrypt()` / `decrypt()` do WHMCS quando disponível, mantendo compatibilidade com instalações que já salvaram o formato legado.
+- O certificado digital **não deve ser versionado**. Configure um caminho protegido fora do webroot para novos uploads; o diretório legado `certs/` continua compatível para instalações existentes.
+- A senha do certificado é gravada com `encrypt()` / `decrypt()` do WHMCS. O formato legado continua apenas para leitura/migração.
+- O QR-Code do DANFSe usa a URL oficial `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave={chave}`.
 
 ---
 

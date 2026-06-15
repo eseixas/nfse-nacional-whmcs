@@ -13,6 +13,8 @@ if (!defined("WHMCS")) {
 
 use WHMCS\Database\Capsule;
 
+require_once ROOTDIR . '/modules/addons/nfse_nacional/lib/CertManager.php';
+
 // --- Funcao auxiliar de emissao (usada por ambos os hooks) -------------------
 
 function nfse_nacional_emitir_automatico($invoiceId, array $options = [])
@@ -25,8 +27,14 @@ function nfse_nacional_emitir_automatico($invoiceId, array $options = [])
         return;
     }
 
-    if (!file_exists(ROOTDIR . '/modules/addons/nfse_nacional/certs/cert.pfx')) {
+    $certStatus = nfse_nacional_cert_status($config);
+    if (!$certStatus['configured']) {
         logActivity('[NFSE Nacional] Emissao ignorada - certificado nao enviado. Fatura #' . $invoiceId);
+        return;
+    }
+    if (!nfse_nacional_cert_ready($config)) {
+        $motivo = $certStatus['error'] ?? 'certificado indisponivel';
+        logActivity('[NFSE Nacional] Emissao ignorada - ' . $motivo . ' Fatura #' . $invoiceId);
         return;
     }
 
@@ -116,9 +124,10 @@ add_hook('AdminAreaPage', 1, function ($vars) {
 
     if (empty($config['cnpj'])) return;
 
-    $nfse    = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
-    $certOk  = file_exists(ROOTDIR . '/modules/addons/nfse_nacional/certs/cert.pfx');
-    $modLink = 'addonmodules.php?module=nfse_nacional';
+    $nfse       = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
+    $certStatus = nfse_nacional_cert_status($config);
+    $certOk     = nfse_nacional_cert_ready($config);
+    $modLink    = 'addonmodules.php?module=nfse_nacional';
 
     if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
     if (empty($_SESSION['nfse_nacional_csrf'])) {
@@ -155,6 +164,11 @@ add_hook('AdminAreaPage', 1, function ($vars) {
                class="btn btn-xs btn-default">
                 <i class="fa fa-download"></i> Baixar XML
             </a>
+            &nbsp;
+            <a href="addonmodules.php?module=nfse_nacional&action=download_pdf&invoice_id=<?= $invoiceId ?>"
+               class="btn btn-xs btn-default">
+                <i class="fa fa-file-pdf-o"></i> Baixar PDF
+            </a>
         <?php elseif ($nfse && $nfse->status === 'cancelada'): ?>
             <span class="label label-default">Cancelada</span>
             NFS-e No <?= htmlspecialchars($nfse->n_dps ?? $nfse->numero_nfse ?? '-') ?> foi cancelada.
@@ -164,27 +178,34 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             <form method="post" action="<?= $modLink ?>&action=emitir" style="display:inline">
                 <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
-                <button type="submit" class="btn btn-xs btn-warning"><i class="fa fa-refresh"></i> Verificar / Retentar</button>
+                <button type="submit" class="btn btn-xs btn-warning" <?= $certOk ? '' : 'disabled' ?>><i class="fa fa-refresh"></i> Verificar / Retentar</button>
             </form>
+            <?php if (!$certOk): ?>
+            <br><small class="text-danger"><?= htmlspecialchars((string)($certStatus['error'] ?? 'Certificado digital indisponivel.')) ?></small>
+            <?php endif; ?>
         <?php elseif ($nfse && $nfse->status === 'erro'): ?>
             <span class="label label-danger">Erro</span>
             <?= htmlspecialchars(mb_substr($nfse->mensagem_erro ?? '', 0, 100, 'UTF-8')) ?>
             <form method="post" action="<?= $modLink ?>&action=emitir" style="display:inline">
                 <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
-                <button type="submit" class="btn btn-xs btn-warning"><i class="fa fa-refresh"></i> Retentar</button>
+                <button type="submit" class="btn btn-xs btn-warning" <?= $certOk ? '' : 'disabled' ?>><i class="fa fa-refresh"></i> Retentar</button>
             </form>
+            <?php if (!$certOk): ?>
+            <br><small class="text-danger"><?= htmlspecialchars((string)($certStatus['error'] ?? 'Certificado digital indisponivel.')) ?></small>
+            <?php endif; ?>
         <?php else: ?>
             <form method="post" action="<?= $modLink ?>&action=emitir">
                 <input type="hidden" name="nfse_csrf_token" value="<?= htmlspecialchars($token) ?>">
                 <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
-                <button type="submit" class="btn btn-sm btn-primary" <?= $certOk ? '' : 'disabled title="Configure o certificado digital"' ?>>
+                <button type="submit" class="btn btn-sm btn-primary" <?= $certOk ? '' : 'disabled title="Certificado digital indisponivel"' ?>>
                     <i class="fa fa-paper-plane"></i> Emitir NFS-e
                 </button>
                 <?php if (!$certOk): ?>
                 <a href="addonmodules.php?module=nfse_nacional&action=upload_cert" class="btn btn-sm btn-warning">
-                    <i class="fa fa-certificate"></i> Configurar Certificado
+                    <i class="fa fa-certificate"></i> <?= ($certStatus['state'] ?? '') === 'expired' ? 'Renovar Certificado' : 'Configurar Certificado' ?>
                 </a>
+                <br><small class="text-danger"><?= htmlspecialchars((string)($certStatus['error'] ?? 'Configure o certificado digital antes de emitir.')) ?></small>
                 <?php endif; ?>
             </form>
         <?php endif; ?>
@@ -273,6 +294,40 @@ function nfse_nacional_get_config(): array
         ->where('module', 'nfse_nacional')
         ->pluck('value', 'setting')
         ->toArray();
+}
+
+function nfse_nacional_cert_exists(array $config = null): bool
+{
+    try {
+        $mgr = new CertManager($config ?? nfse_nacional_get_config());
+        return $mgr->exists();
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+function nfse_nacional_cert_ready(array $config = null): bool
+{
+    try {
+        $mgr = new CertManager($config ?? nfse_nacional_get_config());
+        return $mgr->isReady();
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+function nfse_nacional_cert_status(array $config = null): array
+{
+    try {
+        $mgr = new CertManager($config ?? nfse_nacional_get_config());
+        return $mgr->getStatus();
+    } catch (\Throwable $e) {
+        return [
+            'configured' => false,
+            'state'      => 'missing',
+            'error'      => $e->getMessage(),
+        ];
+    }
 }
 
 /**

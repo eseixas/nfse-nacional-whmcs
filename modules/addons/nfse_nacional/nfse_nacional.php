@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.6.8
+ * @version 1.7.0
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.6.8',
+        'version'     => '1.7.0',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -147,7 +147,13 @@ function nfse_nacional_config()
             'debug_ativo' => [
                 'FriendlyName' => 'Debug',
                 'Type'         => 'yesno',
-                'Description'  => 'Salva arquivos debug_*.xml e debug_*.txt na pasta do addon. Desative em producao apos homologar.',
+                'Description'  => 'Salva arquivos debug_*.xml e debug_*.txt em armazenamento protegido quando configurado. Desative em producao apos homologar.',
+            ],
+            'storage_path' => [
+                'FriendlyName' => 'Caminho de Armazenamento Protegido',
+                'Type'         => 'text',
+                'Size'         => '120',
+                'Description'  => 'Opcional. Caminho fora do webroot para certificados, debug e cache. Aceita {ROOTDIR}. Se vazio, usa o armazenamento legado do addon.',
             ],
             // -- Numeracao DPS ----------------------------------------------
             'ndps_offset' => [
@@ -291,7 +297,7 @@ function nfse_nacional_activate()
     try {
         nfse_nacional_ensure_schema();
 
-        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.6.8 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.7.0 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }
@@ -325,6 +331,7 @@ function nfse_nacional_output($vars)
         case 'log':          $ctrl->log();          break;
         case 'ver_nfse':     $ctrl->verNfse();      break;
         case 'download_xml': $ctrl->downloadXml();  break;
+        case 'download_pdf': $ctrl->downloadPdf();  break;
         case 'produtos':     $ctrl->produtos();     break;
         case 'clientes':     $ctrl->clientes();     break;
         default:             $ctrl->dashboard();    break;

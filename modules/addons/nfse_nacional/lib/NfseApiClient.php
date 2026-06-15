@@ -357,7 +357,7 @@ class NfseApiClient
 
         // Tenta parsear como XML (resposta legada)
         libxml_use_internal_errors(true);
-        $xml = simplexml_load_string($body);
+        $xml = simplexml_load_string($body, 'SimpleXMLElement', LIBXML_NONET);
         libxml_clear_errors();
 
         if ($xml === false) {

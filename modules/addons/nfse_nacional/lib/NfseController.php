@@ -11,6 +11,7 @@ require_once __DIR__ . '/NfseService.php';
 require_once __DIR__ . '/NfseApiClient.php';
 require_once __DIR__ . '/CertManager.php';
 require_once __DIR__ . '/NfseDiagnostico.php';
+require_once __DIR__ . '/NfsePdfGenerator.php';
 
 use WHMCS\Database\Capsule;
 
@@ -28,7 +29,7 @@ class NfseController
         $this->config     = $vars;
         $this->modulelink = $vars['modulelink'];
         $this->service    = new NfseService($vars);
-        $this->certMgr    = new CertManager();
+        $this->certMgr    = new CertManager($vars);
     }
 
     // =========================================================================
@@ -58,8 +59,9 @@ class NfseController
             ->limit(15)
             ->get();
 
-        $certMeta = $this->certMgr->getMeta();
-        $certOk   = $this->certMgr->exists();
+        $certStatus = $this->certMgr->getStatus();
+        $certMeta   = $this->certMgr->getMeta();
+        $certOk     = $this->certMgr->isReady();
 
         $this->renderNav();
 
@@ -75,23 +77,7 @@ class NfseController
         <?php endif;
 
         // Alerta certificado
-        if (!$certOk): ?>
-        <div class="alert alert-danger">
-            <i class="fa fa-exclamation-circle"></i>
-            <strong>Certificado digital nao configurado!</strong>
-            <a href="<?= $this->modulelink ?>&action=upload_cert" class="btn btn-sm btn-warning" style="margin-left:10px;">
-                <i class="fa fa-upload"></i> Fazer Upload Agora
-            </a>
-        </div>
-        <?php elseif (!empty($certMeta['valid_to'])):
-            $dias = ceil((strtotime($certMeta['valid_to']) - time()) / 86400);
-            if ($dias <= 30): ?>
-        <div class="alert alert-warning">
-            <i class="fa fa-clock-o"></i>
-            Certificado vence em <strong><?= $dias ?> dias</strong> (<?= date('d/m/Y', strtotime($certMeta['valid_to'])) ?>).
-            <a href="<?= $this->modulelink ?>&action=upload_cert">Renovar</a>
-        </div>
-        <?php endif; endif;
+        echo $this->renderCertStatusAlert($certStatus);
 
         // Alerta homologacao
         $ambRaw = $this->config['ambiente'] ?? '';
@@ -209,6 +195,11 @@ class NfseController
                            class="btn btn-xs btn-default" title="Baixar XML">
                             <i class="fa fa-download"></i> XML
                         </a>
+                        &nbsp;
+                        <a href="<?= $this->modulelink ?>&action=download_pdf&invoice_id=<?= $n->invoice_id ?>"
+                           class="btn btn-xs btn-default" title="Baixar DANFSe em PDF">
+                            <i class="fa fa-file-pdf-o"></i> PDF
+                        </a>
                         <?php elseif ($n->status === 'erro' || $n->status === 'pendente'): ?>
                         <form method="post" action="<?= $this->modulelink ?>&action=emitir" style="display:inline">
                             <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
@@ -272,9 +263,10 @@ class NfseController
         }
 
         render_form:
-        $meta   = $this->certMgr->getMeta();
-        $certOk = $this->certMgr->exists();
-        $csrf   = $this->getCsrfToken();
+        $certStatus = $this->certMgr->getStatus();
+        $meta       = $this->certMgr->getMeta();
+        $certOk     = $this->certMgr->isReady();
+        $csrf       = $this->getCsrfToken();
 
         $this->renderNav();
         echo $flash;
@@ -283,23 +275,22 @@ class NfseController
             <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-certificate"></i> Certificado Digital A1</h3></div>
             <div class="panel-body">
 
-                <?php if ($certOk && $meta): ?>
-                <div class="alert alert-success">
-                    <i class="fa fa-check-circle fa-lg"></i>
-                    <strong>Certificado configurado e valido</strong><br>
-                    <table class="table table-condensed" style="margin:10px 0 0 0;max-width:500px;">
-                        <tr><th>Arquivo original:</th><td><?= htmlspecialchars($meta['filename'] ?? '-') ?></td></tr>
-                        <tr><th>Titular:</th><td><?= htmlspecialchars($meta['subject'] ?? '-') ?></td></tr>
-                        <tr><th>Valido ate:</th><td><?= htmlspecialchars($meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-') ?></td></tr>
-                        <tr><th>Enviado em:</th><td><?= htmlspecialchars((string)($meta['uploaded_at'] ?? '-')) ?></td></tr>
-                    </table>
-                    <form method="post" action="<?= $this->modulelink ?>&action=upload_cert" style="margin-top:10px"
-                          onsubmit="return confirm('Confirma a remocaoo do certificado?')">
-                        <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
-                        <input type="hidden" name="delete_cert" value="1">
-                        <button type="submit" class="btn btn-xs btn-danger"><i class="fa fa-trash"></i> Remover Certificado</button>
-                    </form>
-                </div>
+                <?php if ($certStatus['configured'] && $meta): ?>
+                <?= $this->renderCertStatusPanel($certStatus) ?>
+                <table class="table table-condensed" style="margin:10px 0 0 0;max-width:500px;">
+                    <tr><th>Arquivo original:</th><td><?= htmlspecialchars($meta['filename'] ?? '-') ?></td></tr>
+                    <tr><th>Titular:</th><td><?= htmlspecialchars($meta['subject'] ?? '-') ?></td></tr>
+                    <tr><th>Valido desde:</th><td><?= htmlspecialchars($meta['valid_from'] ? date('d/m/Y H:i', strtotime($meta['valid_from'])) : '-') ?></td></tr>
+                    <tr><th>Valido ate:</th><td><?= htmlspecialchars($meta['valid_to'] ? date('d/m/Y', strtotime($meta['valid_to'])) : '-') ?></td></tr>
+                    <tr><th>Enviado em:</th><td><?= htmlspecialchars((string)($meta['uploaded_at'] ?? '-')) ?></td></tr>
+                    <tr><th>Armazenamento:</th><td><?= htmlspecialchars(($meta['storage'] ?? '') === 'protected' ? 'Protegido configurado' : 'Legado do addon') ?></td></tr>
+                </table>
+                <form method="post" action="<?= $this->modulelink ?>&action=upload_cert" style="margin-top:10px"
+                      onsubmit="return confirm('Confirma a remocaoo do certificado?')">
+                    <input type="hidden" name="nfse_csrf_token" value="<?= $this->getCsrfToken() ?>">
+                    <input type="hidden" name="delete_cert" value="1">
+                    <button type="submit" class="btn btn-xs btn-danger"><i class="fa fa-trash"></i> Remover Certificado</button>
+                </form>
                 <hr>
                 <p class="text-muted">Para substituir, faca o upload de um novo certificado abaixo.</p>
                 <?php endif; ?>
@@ -316,7 +307,7 @@ class NfseController
                         <label>Senha do Certificado</label>
                         <input type="password" name="cert_password" class="form-control" style="max-width:400px;" required
                                placeholder="Senha de protecaoo do arquivo .pfx">
-                        <p class="help-block">Armazenada de forma criptografada com AES-256.</p>
+                        <p class="help-block">Armazenada com a criptografia nativa do WHMCS.</p>
                     </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fa fa-upload"></i> Enviar Certificado
@@ -325,7 +316,8 @@ class NfseController
 
                 <div class="alert alert-info" style="margin-top:20px;">
                     <i class="fa fa-info-circle"></i>
-                    O certificado fica em diretorio protegido por <code>.htaccess</code> - sem acesso HTTP direto.
+                    Configure um caminho protegido fora do webroot em <strong>Caminho de Armazenamento Protegido</strong>.
+                    Se vazio, o addon usa o armazenamento legado protegido por <code>.htaccess</code>.
                     Nunca compartilhe o <code>.pfx</code> ou sua senha.
                 </div>
             </div>
@@ -399,8 +391,8 @@ class NfseController
             </div>
             <div class="panel-body">
                 <p class="text-muted">
-                    Selecione o periodo e baixe um <strong>.zip</strong> com os XMLs de todas as
-                    NFS-e emitidas no intervalo.
+                    Selecione o periodo e baixe um <strong>.zip</strong> com XMLs ou PDFs DANFSe
+                    das NFS-e no intervalo.
                 </p>
 
                 <form method="post" action="<?= $this->modulelink ?>&action=exportar" id="form-exportar">
@@ -440,6 +432,9 @@ class NfseController
                         <div class="col-sm-12" style="margin-top: 5px;">
                             <button type="submit" class="btn btn-success">
                                 <i class="fa fa-file-zip-o"></i> Baixar XML
+                            </button>
+                            <button type="submit" name="formato" value="pdf" class="btn btn-primary" style="margin-left:8px;">
+                                <i class="fa fa-file-pdf-o"></i> Baixar PDF
                             </button>
                         </div>
                     </div>
@@ -516,6 +511,7 @@ class NfseController
         $dataInicio   = $_POST['data_inicio']   ?? date('Y-m-01');
         $dataFim      = $_POST['data_fim']      ?? date('Y-m-d');
         $statusFiltro = $_POST['status_filtro'] ?? 'emitida';
+        $formato      = $_POST['formato']       ?? 'xml';
 
         // Validacaoo basica de datas
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataInicio) ||
@@ -541,6 +537,9 @@ class NfseController
         }
         if (!in_array($statusFiltro, ['emitida', 'cancelada', 'todos'], true)) {
             $statusFiltro = 'emitida';
+        }
+        if (!in_array($formato, ['xml', 'pdf'], true)) {
+            $formato = 'xml';
         }
 
         // Busca registros
@@ -583,7 +582,7 @@ class NfseController
         $api = null;
         try {
             require_once __DIR__ . '/CertManager.php';
-            $certMgr = new CertManager();
+            $certMgr = new CertManager($this->config);
             if ($certMgr->exists()) {
                 require_once __DIR__ . '/NfseApiClient.php';
                 $api = new NfseApiClient(
@@ -596,47 +595,61 @@ class NfseController
             $api = null;
         }
 
+        $pdfGenerator = ($formato === 'pdf') ? new NfsePdfGenerator($this->config) : null;
+        $adicionados = 0;
+        $falhas = array();
+
         foreach ($registros as $reg) {
             if (empty($reg->xml_enviado) && empty($reg->xml_retorno)) continue;
 
             $numeroNfse  = $reg->numero_nfse ?: ('fat' . $reg->invoice_id);
             $dataEmissao = $reg->emitida_em ? date('Ymd', strtotime($reg->emitida_em)) : date('Ymd');
-            $nomeArq     = sprintf('NFSe_%s_%s_%s.xml', $cnpj, $numeroNfse, $dataEmissao);
 
-            $xmlContent = null;
+            try {
+                $xmlContent = $this->getXmlContent($reg, $api, $formato === 'pdf');
+            } catch (\Exception $e) {
+                $falhas[] = '#' . $reg->invoice_id . ': ' . $e->getMessage();
+                $this->service->log('warning', 'export_pdf', $e->getMessage(), array(), $reg->invoice_id);
+                continue;
+            }
 
-            // Tenta obter XML diretamente da API do Emissor Nacional
-            if ($api !== null && !empty($reg->codigo_verificacao)) {
+            if ($formato === 'pdf') {
                 try {
-                    $chaveUrl = $reg->codigo_verificacao;
-                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
-                        $chaveUrl = $mxc[1];
-                    }
-                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
-                    $apiResp = $api->consultarPorChave($chaveUrl);
-                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
-                        $xmlContent = $apiResp['nfse_xml'];
-                    }
+                    $pdfContent = $pdfGenerator->render($reg, $xmlContent);
+                    $nomeArq = sprintf('DANFSe_%s_%s_%s.pdf', $cnpj, $numeroNfse, $dataEmissao);
+                    $zip->addFromString($nomeArq, $pdfContent);
+                    $adicionados++;
                 } catch (\Exception $e) {
-                    // Fallback para XML local
+                    $falhas[] = '#' . $reg->invoice_id . ': ' . $e->getMessage();
+                    $this->service->log('warning', 'export_pdf', $e->getMessage(), array(), $reg->invoice_id);
                 }
+                continue;
             }
 
-            // Fallback: usa o XML armazenado localmente
-            if ($xmlContent === null) {
-                $xmlContent = $reg->xml_retorno ?: $reg->xml_enviado ?: '';
-            }
-
-            if (!empty($xmlContent)) {
+            $nomeArq = sprintf('NFSe_%s_%s_%s.xml', $cnpj, $numeroNfse, $dataEmissao);
+            if ($xmlContent !== '') {
                 $zip->addFromString($nomeArq, $xmlContent);
+                $adicionados++;
             }
         }
 
         $zip->close();
 
+        if ($adicionados === 0) {
+            @unlink($zipTemp);
+            $this->renderNav();
+            $msg = 'Nenhum arquivo foi gerado para o periodo selecionado.';
+            if ($falhas) {
+                $msg .= ' Falhas: ' . htmlspecialchars(implode(' | ', array_slice($falhas, 0, 5)));
+            }
+            $this->flash($msg, 'warning', true);
+            $this->exportar();
+            return;
+        }
+
         // Nome e download
         $periodo = date('Ymd', strtotime($dataInicio)) . '_' . date('Ymd', strtotime($dataFim));
-        $zipNome = 'NFSe_BH_' . $cnpj . '_' . $periodo . '.zip';
+        $zipNome = ($formato === 'pdf' ? 'DANFSe_' : 'NFSe_') . $cnpj . '_' . $periodo . '.zip';
 
         header('Content-Type: application/zip');
         header('Content-Disposition: attachment; filename="' . $zipNome . '"');
@@ -798,6 +811,78 @@ class NfseController
     // Helpers
     // =========================================================================
 
+    private function renderCertStatusAlert(array $certStatus): string
+    {
+        $uploadUrl = $this->modulelink . '&action=upload_cert';
+        $state     = $certStatus['state'] ?? 'missing';
+
+        if ($state === 'missing') {
+            return '<div class="alert alert-warning">'
+                . '<i class="fa fa-exclamation-triangle"></i> '
+                . '<strong>Certificado digital nao configurado.</strong> '
+                . 'Envie o arquivo .pfx antes de emitir NFS-e. '
+                . '<a href="' . htmlspecialchars($uploadUrl) . '" class="btn btn-sm btn-default" style="margin-left:10px;">'
+                . '<i class="fa fa-certificate"></i> Configurar Certificado</a>'
+                . '</div>';
+        }
+
+        if (in_array($state, ['expired', 'unreadable', 'not_yet_valid'], true)) {
+            $msg = htmlspecialchars((string)($certStatus['error'] ?? 'Certificado digital indisponivel.'));
+            return '<div class="alert alert-danger">'
+                . '<i class="fa fa-times-circle"></i> '
+                . '<strong>Certificado digital indisponivel.</strong> ' . $msg . ' '
+                . '<a href="' . htmlspecialchars($uploadUrl) . '" class="btn btn-sm btn-danger" style="margin-left:10px;">'
+                . '<i class="fa fa-refresh"></i> Renovar / Reenviar</a>'
+                . '</div>';
+        }
+
+        if ($state === 'expiring') {
+            $days = (int)($certStatus['days_remaining'] ?? 0);
+            $validTo = htmlspecialchars((string)($certStatus['valid_to'] ?? ''));
+            $validToFmt = $validTo ? date('d/m/Y', strtotime($validTo)) : '-';
+            return '<div class="alert alert-warning">'
+                . '<i class="fa fa-clock-o"></i> '
+                . '<strong>Certificado expira em breve.</strong> '
+                . 'Valido ate ' . $validToFmt . ' (' . $days . ' dia(s) restante(s)). '
+                . '<a href="' . htmlspecialchars($uploadUrl) . '" class="btn btn-sm btn-warning" style="margin-left:10px;">'
+                . '<i class="fa fa-certificate"></i> Renovar Certificado</a>'
+                . '</div>';
+        }
+
+        return '';
+    }
+
+    private function renderCertStatusPanel(array $certStatus): string
+    {
+        $state = $certStatus['state'] ?? 'missing';
+        $map   = [
+            'valid'         => ['success', 'fa-check-circle', 'Certificado valido'],
+            'expiring'      => ['warning', 'fa-clock-o', 'Certificado expira em breve'],
+            'expired'       => ['danger',  'fa-times-circle', 'Certificado vencido'],
+            'not_yet_valid' => ['danger',  'fa-ban', 'Certificado ainda nao valido'],
+            'unreadable'    => ['danger',  'fa-exclamation-triangle', 'Certificado ilegivel'],
+        ];
+
+        if (!isset($map[$state])) {
+            return '';
+        }
+
+        [$style, $icon, $title] = $map[$state];
+        $detail = '';
+
+        if ($state === 'expiring') {
+            $days = (int)($certStatus['days_remaining'] ?? 0);
+            $detail = ' — ' . $days . ' dia(s) restante(s)';
+        } elseif (!empty($certStatus['error'])) {
+            $detail = ' — ' . htmlspecialchars((string)$certStatus['error']);
+        }
+
+        return '<div class="alert alert-' . $style . '" style="margin:0;">'
+            . '<i class="fa ' . $icon . '"></i> <strong>' . htmlspecialchars($title) . '</strong>'
+            . $detail
+            . '</div>';
+    }
+
     // =========================================================================
     // Visualizar XML da NFS-e
     // =========================================================================
@@ -816,36 +901,7 @@ class NfseController
             return;
         }
 
-        $xml = null;
-
-        // Tenta buscar o XML completo diretamente do Emissor Nacional via API
-        if (!empty($record->codigo_verificacao)) {
-            try {
-                if ($this->certMgr->exists()) {
-                    $api = new NfseApiClient(
-                        $this->config['ambiente'] ?? 'producao_restrita',
-                        $this->certMgr->getCertPath(),
-                        $this->certMgr->getPassword()
-                    );
-                    $chaveUrl = $record->codigo_verificacao;
-                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
-                        $chaveUrl = $mxc[1];
-                    }
-                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
-                    $apiResp = $api->consultarPorChave($chaveUrl);
-                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
-                        $xml = $apiResp['nfse_xml'];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Fallback para XML local
-            }
-        }
-
-        // Fallback: usa o XML armazenado localmente
-        if ($xml === null) {
-            $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
-        }
+        $xml = $this->getXmlContent($record);
 
         // Formata XML para exibicao
         $xmlFormatado = '';
@@ -854,7 +910,7 @@ class NfseController
                 $dom = new DOMDocument('1.0', 'UTF-8');
                 $dom->preserveWhiteSpace = false;
                 $dom->formatOutput = true;
-                if ($dom->loadXML($xml)) {
+                if ($dom->loadXML($xml, LIBXML_NONET)) {
                     $xmlFormatado = htmlspecialchars($dom->saveXML(), ENT_QUOTES, 'UTF-8');
                 } else {
                     $xmlFormatado = htmlspecialchars($xml, ENT_QUOTES, 'UTF-8');
@@ -898,6 +954,10 @@ class NfseController
                                class="btn btn-xs btn-default">
                                 <i class="fa fa-download"></i> Baixar XML
                             </a>
+                            <a href="<?= $this->modulelink ?>&action=download_pdf&invoice_id=<?= $invoiceId ?>"
+                               class="btn btn-xs btn-default">
+                                <i class="fa fa-file-pdf-o"></i> Baixar PDF
+                            </a>
                         </div>
                     </div>
                     <pre style="max-height:500px;overflow:auto;font-size:11px;background:#f8f8f8;border:1px solid #ddd;padding:10px;border-radius:4px;"><?= $xmlFormatado ?></pre>
@@ -912,6 +972,9 @@ class NfseController
                     </a>
                     <a href="invoices.php?action=edit&id=<?= $invoiceId ?>" class="btn btn-default" target="_blank">
                         <i class="fa fa-external-link"></i> Ver Fatura
+                    </a>
+                    <a href="<?= $this->modulelink ?>&action=download_pdf&invoice_id=<?= $invoiceId ?>" class="btn btn-default">
+                        <i class="fa fa-file-pdf-o"></i> Baixar PDF
                     </a>
                 </div>
             </div>
@@ -934,36 +997,7 @@ class NfseController
             die('NFS-e nao encontrada.');
         }
 
-        $xml = null;
-
-        // Tenta buscar o XML diretamente do Emissor Nacional via API
-        if (!empty($record->codigo_verificacao)) {
-            try {
-                if ($this->certMgr->exists()) {
-                    $api = new NfseApiClient(
-                        $this->config['ambiente'] ?? 'producao_restrita',
-                        $this->certMgr->getCertPath(),
-                        $this->certMgr->getPassword()
-                    );
-                    $chaveUrl = $record->codigo_verificacao;
-                    if (preg_match('/^NFS(.{50})$/i', $chaveUrl, $mxc)) {
-                        $chaveUrl = $mxc[1];
-                    }
-                    $chaveUrl = substr(trim($chaveUrl), 0, 50);
-                    $apiResp = $api->consultarPorChave($chaveUrl);
-                    if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
-                        $xml = $apiResp['nfse_xml'];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Fallback para XML local
-            }
-        }
-
-        // Fallback: usa o XML armazenado localmente
-        if ($xml === null) {
-            $xml = $record->xml_retorno ?: $record->xml_enviado ?: '';
-        }
+        $xml = $this->getXmlContent($record);
 
         $numeroNfse = preg_replace('/[^A-Za-z0-9_.-]/', '', (string)($record->numero_nfse ?? '0'));
         $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($numeroNfse ?: '0') . '.xml';
@@ -974,6 +1008,88 @@ class NfseController
         header('Cache-Control: no-cache');
         echo $xml;
         exit;
+    }
+
+    // =========================================================================
+    // Download PDF DANFSe
+    // =========================================================================
+
+    public function downloadPdf(): void
+    {
+        $invoiceId = (int)($_GET['invoice_id'] ?? 0);
+        $record = Capsule::table('mod_nfse_nacional')
+            ->where('invoice_id', $invoiceId)
+            ->first();
+
+        if (!$record) {
+            die('NFS-e nao encontrada.');
+        }
+
+        try {
+            $xml = $this->getXmlContent($record, null, true);
+            $generator = new NfsePdfGenerator($this->config);
+            $pdf = $generator->render($record, $xml);
+        } catch (\Exception $e) {
+            die('PDF indisponivel: ' . htmlspecialchars($e->getMessage()));
+        }
+
+        $numeroNfse = preg_replace('/[^A-Za-z0-9_.-]/', '', (string)($record->numero_nfse ?? '0'));
+        $nome = 'nfse_fatura_' . $invoiceId . '_nfse_' . ($numeroNfse ?: '0') . '.pdf';
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $nome . '"');
+        header('Content-Length: ' . strlen($pdf));
+        header('Cache-Control: no-cache');
+        echo $pdf;
+        exit;
+    }
+
+    private function getXmlContent($record, ?NfseApiClient $api = null, bool $requireAuthorized = false): string
+    {
+        if ($api === null && !empty($record->codigo_verificacao)) {
+            try {
+                if ($this->certMgr->exists()) {
+                    $api = new NfseApiClient(
+                        $this->config['ambiente'] ?? 'producao_restrita',
+                        $this->certMgr->getCertPath(),
+                        $this->certMgr->getPassword()
+                    );
+                }
+            } catch (\Exception $e) {
+                $api = null;
+            }
+        }
+
+        if ($api !== null && !empty($record->codigo_verificacao)) {
+            try {
+                $chaveUrl = $this->normalizeChaveUrl((string)$record->codigo_verificacao);
+                $apiResp = $api->consultarPorChave($chaveUrl);
+                if ($apiResp['success'] && !empty($apiResp['nfse_xml'])) {
+                    return (string)$apiResp['nfse_xml'];
+                }
+            } catch (\Exception $e) {
+                // Fallback para XML local.
+            }
+        }
+
+        if (!empty($record->xml_retorno)) {
+            return (string)$record->xml_retorno;
+        }
+
+        if ($requireAuthorized) {
+            throw new \Exception('o XML autorizado da NFS-e nao esta salvo e nao foi recuperado pela API.');
+        }
+
+        return (string)($record->xml_enviado ?? '');
+    }
+
+    private function normalizeChaveUrl(string $chave): string
+    {
+        if (preg_match('/^NFS(.{50})$/i', $chave, $mxc)) {
+            $chave = $mxc[1];
+        }
+        $digits = preg_replace('/\D/', '', $chave);
+        return substr(trim($digits ?: $chave), 0, 50);
     }
 
     // =========================================================================

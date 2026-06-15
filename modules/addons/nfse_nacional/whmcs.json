@@ -2,7 +2,7 @@
     "schema": "1.0",
     "type": "whmcs-addons",
     "name": "nfse_nacional",
-    "version": "1.6.8",
+    "version": "1.7.0",
     "license": "GPL-3.0",
     "category": "addon",
     "description": {
@@ -15,7 +15,8 @@
             "Widget na fatura — botões de emitir, ver e baixar XML diretamente na tela de edição de fatura no admin",
             "Configuração por produto — código de serviço (LC 116), tributação municipal/nacional e NBS individualmente por produto WHMCS",
             "Diagnóstico de conectividade — testa DNS, TCP 443 e HTTPS para os endpoints da Receita Federal",
-            "Exportar XML — baixa ZIP com XMLs de todas as notas de um período",
+            "Exportar XML/PDF — baixa ZIP com XMLs ou DANFSe em PDF de todas as notas de um período",
+            "PDF DANFSe com QR-Code oficial para consulta pública nacional",
             "Debug configurável — salva arquivos debug_*.xml/txt apenas quando ativado (desative em produção)"
         ]
     },

@@ -30,7 +30,7 @@ class NfseService
     public function __construct($config)
     {
         $this->config  = $config;
-        $this->certMgr = new CertManager();
+        $this->certMgr = new CertManager((array)$config);
         $this->builder = new NfseXmlBuilder($config);
     }
 
@@ -41,7 +41,15 @@ class NfseService
 
     private function debugDir(): string
     {
-        $dir = __DIR__ . '/../debug';
+        $storage = trim((string)($this->config['storage_path'] ?? ''));
+        if ($storage !== '') {
+            if (defined('ROOTDIR')) {
+                $storage = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $storage);
+            }
+            $dir = rtrim($storage, "/\\") . DIRECTORY_SEPARATOR . 'debug';
+        } else {
+            $dir = __DIR__ . '/../debug';
+        }
         if (!is_dir($dir)) {
             mkdir($dir, 0750, true);
             file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");
@@ -95,9 +103,14 @@ class NfseService
                     'message' => 'Ja existe NFS-e emitida para a fatura #' . $invoiceId . ' (Numero: ' . $existing->numero_nfse . ')');
             }
 
-            if (!$this->certMgr->exists()) {
+            $certStatus = $this->certMgr->getStatus();
+            if ($certStatus['state'] === 'missing') {
                 return array('success' => false,
                     'message' => 'Certificado digital nao configurado. Acesse Addons > NFS-e > Certificado Digital.');
+            }
+            if (!$this->certMgr->isReady()) {
+                return array('success' => false,
+                    'message' => $certStatus['error'] ?: 'Certificado digital indisponivel para emissao.');
             }
 
             $invoice = $this->getInvoice($invoiceId);
@@ -114,6 +127,11 @@ class NfseService
             $client = $this->getClient($invoice['userid']);
             if (!$client) {
                 return array('success' => false, 'message' => 'Cliente nao encontrado para a fatura #' . $invoiceId . '.');
+            }
+
+            $docError = NfseXmlBuilder::validarDocumentoTomador($client);
+            if ($docError) {
+                return array('success' => false, 'message' => $docError);
             }
 
             // Carrega certificado e cria o assinador
@@ -141,7 +159,7 @@ class NfseService
 
                     libxml_use_internal_errors(true);
                     $dom = new \DOMDocument();
-                    if (!$dom->loadXML($xmlAssinado)) {
+                    if (!$dom->loadXML($xmlAssinado, LIBXML_NONET)) {
                         $errs = array_map(function ($e) { return $e->message; }, libxml_get_errors());
                         libxml_clear_errors();
                         throw new \Exception('XML da DPS invalido: ' . implode('; ', $errs));
@@ -464,14 +482,33 @@ class NfseService
         if (!$client) return null;
         $client = (array)$client;
 
-        // Busca CPF/CNPJ do campo customizado "CPF/CNPJ"
-        $cf = Capsule::table('tblcustomfieldsvalues')
+        // Busca CPF/CNPJ em campos personalizados com nomes comuns no WHMCS
+        $fieldNames = array('CPF/CNPJ', 'CNPJ/CPF', 'CPF ou CNPJ', 'CNPJ', 'CPF');
+        $cfRows = Capsule::table('tblcustomfieldsvalues')
             ->join('tblcustomfields', 'tblcustomfieldsvalues.fieldid', '=', 'tblcustomfields.id')
             ->where('tblcustomfieldsvalues.relid', $id)
-            ->where('tblcustomfields.fieldname', 'CPF/CNPJ')
-            ->first();
+            ->where('tblcustomfields.type', 'client')
+            ->whereNotNull('tblcustomfieldsvalues.value')
+            ->where('tblcustomfieldsvalues.value', '!=', '')
+            ->select('tblcustomfields.fieldname', 'tblcustomfieldsvalues.value')
+            ->get();
 
-        $client['tax_id'] = $cf ? trim($cf->value) : '';
+        $taxId = '';
+        $priority = array_flip(array_map('strtolower', $fieldNames));
+        $bestRank = PHP_INT_MAX;
+        foreach ($cfRows as $row) {
+            $nameKey = strtolower(trim($row->fieldname));
+            if (!isset($priority[$nameKey])) {
+                continue;
+            }
+            $rank = $priority[$nameKey];
+            if ($rank < $bestRank) {
+                $bestRank = $rank;
+                $taxId = trim($row->value);
+            }
+        }
+
+        $client['tax_id'] = $taxId;
 
         return $client;
     }

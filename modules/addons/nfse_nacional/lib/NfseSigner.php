@@ -34,7 +34,7 @@ class NfseSigner
         $doc->formatOutput       = false;
 
         libxml_use_internal_errors(true);
-        if (!$doc->loadXML($xmlString)) {
+        if (!$doc->loadXML($xmlString, LIBXML_NONET)) {
             $errs = libxml_get_errors();
             $msgs = array();
             foreach ($errs as $e) {
@@ -90,7 +90,7 @@ class NfseSigner
             . '</SignedInfo>';
 
         $siDoc = new DOMDocument('1.0', 'UTF-8');
-        $siDoc->loadXML($signedInfoXml);
+        $siDoc->loadXML($signedInfoXml, LIBXML_NONET);
         $c14nSI = $siDoc->C14N(true, true);
 
         $pkey = openssl_pkey_get_private($this->certs['pkey']);

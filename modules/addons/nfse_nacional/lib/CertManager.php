@@ -9,13 +9,17 @@ if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
  */
 class CertManager
 {
+    private const EXPIRING_DAYS = 30;
+
     private $certDir;
+    private $legacyCertDir;
     private $certFile;
     private $metaFile;
 
-    public function __construct()
+    public function __construct(array $config = array())
     {
-        $this->certDir  = __DIR__ . '/../certs';
+        $this->legacyCertDir = __DIR__ . '/../certs';
+        $this->certDir  = $this->resolveCertDir($config);
         $this->certFile = $this->certDir . '/cert.pfx';
         $this->metaFile = $this->certDir . '/cert_meta.json';
     }
@@ -29,6 +33,13 @@ class CertManager
      */
     public function upload(array $file, string $password): array
     {
+        if (!function_exists('encrypt')) {
+            return [
+                'success' => false,
+                'message' => 'Criptografia do WHMCS indisponivel. Carregue o addon dentro do WHMCS antes de gravar um novo certificado.',
+            ];
+        }
+
         if (empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) {
             return ['success' => false, 'message' => 'Erro no upload: ' . $this->uploadError($file['error'] ?? -1)];
         }
@@ -99,7 +110,91 @@ class CertManager
      */
     public function exists(): bool
     {
-        return file_exists($this->certFile) && file_exists($this->metaFile);
+        return $this->activePaths() !== null;
+    }
+
+    /**
+     * Certificado configurado, legivel e dentro da validade operacional.
+     */
+    public function isReady(): bool
+    {
+        $status = $this->getStatus();
+        return in_array($status['state'], ['valid', 'expiring'], true);
+    }
+
+    /**
+     * Status operacional do certificado lendo o PFX real (nao apenas o JSON em cache).
+     */
+    public function getStatus(): array
+    {
+        $paths = $this->activePaths();
+        $storedMeta = [];
+        if ($paths !== null) {
+            $storedMeta = json_decode((string)file_get_contents($paths['meta']), true) ?? [];
+            unset($storedMeta['password']);
+        }
+
+        $status = [
+            'configured'     => $paths !== null,
+            'readable'       => false,
+            'state'          => 'missing',
+            'valid_from'     => null,
+            'valid_to'       => null,
+            'days_remaining' => null,
+            'subject'        => $storedMeta['subject'] ?? '',
+            'filename'       => $storedMeta['filename'] ?? '',
+            'uploaded_at'    => $storedMeta['uploaded_at'] ?? '',
+            'storage'        => ($paths && $paths['dir'] === $this->legacyCertDir) ? 'legacy' : 'protected',
+            'error'          => null,
+        ];
+
+        if ($paths === null) {
+            $status['error'] = 'Certificado digital nao configurado.';
+            return $status;
+        }
+
+        $pfxContent = file_get_contents($paths['cert']);
+        if ($pfxContent === false || $pfxContent === '') {
+            $status['state'] = 'unreadable';
+            $status['error'] = 'Nao foi possivel ler o arquivo do certificado.';
+            return $status;
+        }
+
+        $password = $this->decryptPassword($storedMeta['password'] ?? '');
+        $certs = [];
+        if (!openssl_pkcs12_read($pfxContent, $certs, $password)) {
+            $status['state'] = 'unreadable';
+            $status['error'] = 'Nao foi possivel abrir o certificado. Verifique a senha ou envie o arquivo novamente.';
+            return $status;
+        }
+
+        $info = openssl_x509_parse($certs['cert']);
+        $validFrom = (int)($info['validFrom_time_t'] ?? 0);
+        $validTo   = (int)($info['validTo_time_t'] ?? 0);
+        $now       = time();
+
+        $status['readable'] = true;
+        $status['valid_from'] = $validFrom ? date('Y-m-d H:i:s', $validFrom) : null;
+        $status['valid_to'] = $validTo ? date('Y-m-d', $validTo) : null;
+        $status['subject'] = $info['subject']['CN'] ?? ($storedMeta['subject'] ?? '');
+
+        if ($validFrom > $now) {
+            $status['state'] = 'not_yet_valid';
+            $status['error'] = 'Certificado ainda nao entrou em vigor em ' . date('d/m/Y H:i', $validFrom) . '.';
+            return $status;
+        }
+
+        if ($validTo <= $now) {
+            $status['state'] = 'expired';
+            $status['days_remaining'] = (int)ceil(($validTo - $now) / 86400);
+            $status['error'] = 'Certificado digital vencido em ' . date('d/m/Y', $validTo) . '. Renove o certificado.';
+            return $status;
+        }
+
+        $daysRemaining = (int)ceil(($validTo - $now) / 86400);
+        $status['days_remaining'] = $daysRemaining;
+        $status['state'] = ($daysRemaining <= self::EXPIRING_DAYS) ? 'expiring' : 'valid';
+        return $status;
     }
 
     /**
@@ -107,11 +202,24 @@ class CertManager
      */
     public function getMeta(): array
     {
-        if (!file_exists($this->metaFile)) {
+        $status = $this->getStatus();
+        if (!$status['configured']) {
             return [];
         }
-        $meta = json_decode(file_get_contents($this->metaFile), true) ?? [];
-        unset($meta['password']); // nunca retorna a senha
+
+        $meta = [
+            'filename'       => $status['filename'],
+            'uploaded_at'    => $status['uploaded_at'],
+            'valid_to'       => $status['valid_to'],
+            'valid_from'     => $status['valid_from'],
+            'subject'        => $status['subject'],
+            'storage'        => $status['storage'],
+            'state'          => $status['state'],
+            'days_remaining' => $status['days_remaining'],
+            'readable'       => $status['readable'],
+            'error'          => $status['error'],
+        ];
+
         return $meta;
     }
 
@@ -120,7 +228,8 @@ class CertManager
      */
     public function getCertPath(): string
     {
-        return $this->certFile;
+        $paths = $this->activePaths();
+        return $paths['cert'] ?? $this->certFile;
     }
 
     /**
@@ -128,10 +237,11 @@ class CertManager
      */
     public function getPassword(): string
     {
-        if (!file_exists($this->metaFile)) {
+        $paths = $this->activePaths();
+        if ($paths === null) {
             throw new \Exception('Nenhum certificado carregado. Faca o upload em Addons -> NFSE Nacional -> Certificado Digital.');
         }
-        $meta = json_decode(file_get_contents($this->metaFile), true);
+        $meta = json_decode(file_get_contents($paths['meta']), true);
         return $this->decryptPassword($meta['password'] ?? '');
     }
 
@@ -140,23 +250,23 @@ class CertManager
      */
     public function read(): array
     {
-        if (!$this->exists()) {
+        $status = $this->getStatus();
+        if ($status['state'] === 'missing') {
             throw new \Exception('Certificado digital não encontrado. Faça o upload primeiro.');
         }
+        if (!$status['readable']) {
+            throw new \Exception($status['error'] ?: 'Erro ao ler certificado. A senha pode estar incorreta ou o arquivo corrompido.');
+        }
+        if (!$this->isReady()) {
+            throw new \Exception($status['error'] ?: 'Certificado digital indisponivel para emissao.');
+        }
 
-        $pfxContent = file_get_contents($this->certFile);
+        $pfxContent = file_get_contents($this->getCertPath());
         $password   = $this->getPassword();
         $certs      = [];
 
         if (!openssl_pkcs12_read($pfxContent, $certs, $password)) {
             throw new \Exception('Erro ao ler certificado. A senha pode estar incorreta ou o arquivo corrompido.');
-        }
-
-        // Verifica validade
-        $info    = openssl_x509_parse($certs['cert']);
-        $validTo = $info['validTo_time_t'] ?? 0;
-        if ($validTo < time()) {
-            throw new \Exception('Certificado digital VENCIDO em ' . date('d/m/Y H:i', $validTo) . '. Renove o certificado.');
         }
 
         return $certs;
@@ -169,18 +279,15 @@ class CertManager
     {
         if (file_exists($this->certFile)) unlink($this->certFile);
         if (file_exists($this->metaFile)) unlink($this->metaFile);
+        $legacyCert = $this->legacyCertDir . '/cert.pfx';
+        $legacyMeta = $this->legacyCertDir . '/cert_meta.json';
+        if ($legacyCert !== $this->certFile && file_exists($legacyCert)) unlink($legacyCert);
+        if ($legacyMeta !== $this->metaFile && file_exists($legacyMeta)) unlink($legacyMeta);
     }
 
     private function encryptPassword(string $password): string
     {
-        if (function_exists('encrypt')) {
-            return 'whmcs:' . encrypt($password);
-        }
-
-        $key = hash('sha256', php_uname('n') . __DIR__, true);
-        $iv  = random_bytes(16);
-        $enc = openssl_encrypt($password, 'AES-256-CBC', $key, 0, $iv);
-        return base64_encode($iv . '::' . $enc);
+        return 'whmcs:' . encrypt($password);
     }
 
     private function decryptPassword(string $encrypted): string
@@ -201,6 +308,47 @@ class CertManager
         $parts = explode('::', base64_decode($encrypted), 2);
         if (count($parts) !== 2) return '';
         return openssl_decrypt($parts[1], 'AES-256-CBC', $key, 0, $parts[0]) ?: '';
+    }
+
+    private function resolveCertDir(array $config): string
+    {
+        $base = trim((string)($config['storage_path'] ?? ''));
+        if ($base === '') {
+            return $this->legacyCertDir;
+        }
+
+        if (defined('ROOTDIR')) {
+            $base = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $base);
+        }
+        $base = rtrim($base, "/\\");
+        if ($base === '') {
+            return $this->legacyCertDir;
+        }
+
+        return $base . DIRECTORY_SEPARATOR . 'certs';
+    }
+
+    private function activePaths(): ?array
+    {
+        $primary = [
+            'dir'  => $this->certDir,
+            'cert' => $this->certFile,
+            'meta' => $this->metaFile,
+        ];
+        if (file_exists($primary['cert']) && file_exists($primary['meta'])) {
+            return $primary;
+        }
+
+        $legacy = [
+            'dir'  => $this->legacyCertDir,
+            'cert' => $this->legacyCertDir . '/cert.pfx',
+            'meta' => $this->legacyCertDir . '/cert_meta.json',
+        ];
+        if (file_exists($legacy['cert']) && file_exists($legacy['meta'])) {
+            return $legacy;
+        }
+
+        return null;
     }
 
     private function uploadError(int $code): string

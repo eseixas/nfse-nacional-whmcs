@@ -264,9 +264,78 @@ class NfseXmlBuilder
     /**
      * Retorna [xmlTomador, cMunTomador]
      */
+    /**
+     * Valida documento do tomador antes da emissao.
+     * Retorna mensagem de erro ou null se OK.
+     */
+    public static function validarDocumentoTomador(array $client)
+    {
+        $docInfo = self::resolveTomadorDocumentoFromClient($client);
+        if ($docInfo['tipo'] !== 'invalido') {
+            return null;
+        }
+
+        if (self::isClienteBrasileiro($client)) {
+            $nome = trim($client['companyname'] ?: trim(($client['firstname'] ?? '') . ' ' . ($client['lastname'] ?? '')));
+            return 'CPF/CNPJ do tomador nao informado ou invalido para o cliente '
+                . ($nome !== '' ? $nome : ('#' . ($client['id'] ?? '?')))
+                . '. Cadastre o campo personalizado CPF/CNPJ no perfil do cliente no WHMCS.';
+        }
+
+        return null;
+    }
+
+    private function resolveTomadorDocumento(array $client)
+    {
+        return self::resolveTomadorDocumentoFromClient($client);
+    }
+
+    /**
+     * Resolve identificacao do tomador conforme schema NFSe Nacional.
+     * NIF e cNaoNIF sao mutuamente exclusivos; cNaoNIF aceita apenas 0, 1 ou 2.
+     *
+     * @return array{tipo:string,valor:string}
+     */
+    private static function resolveTomadorDocumentoFromClient(array $client)
+    {
+        $raw    = trim($client['tax_id'] ?? '');
+        $digits = preg_replace('/\D/', '', $raw);
+
+        if (strlen($digits) === 14) {
+            return array('tipo' => 'cnpj', 'valor' => $digits);
+        }
+        if (strlen($digits) === 11) {
+            return array('tipo' => 'cpf', 'valor' => $digits);
+        }
+        if (strlen($digits) === 10) {
+            return array('tipo' => 'cpf', 'valor' => str_pad($digits, 11, '0', STR_PAD_LEFT));
+        }
+        if (strlen($digits) >= 12 && strlen($digits) <= 13) {
+            return array('tipo' => 'cnpj', 'valor' => str_pad($digits, 14, '0', STR_PAD_LEFT));
+        }
+
+        if (!self::isClienteBrasileiro($client)) {
+            $nif = preg_replace('/[^a-zA-Z0-9]/', '', $raw);
+            if ($nif !== '') {
+                return array('tipo' => 'nif', 'valor' => substr($nif, 0, 40));
+            }
+            return array('tipo' => 'cnaonif', 'valor' => '0');
+        }
+
+        return array('tipo' => 'invalido', 'valor' => '');
+    }
+
+    private static function isClienteBrasileiro(array $client)
+    {
+        $country = strtolower(trim($client['country'] ?? ''));
+        if ($country === '' || $country === 'br' || $country === 'brazil' || $country === 'brasil') {
+            return true;
+        }
+        return false;
+    }
+
     private function buildTomador($client)
     {
-        $doc  = preg_replace('/\D/', '', $client['tax_id'] ?? '');
         $nome = mb_substr(
             trim($client['companyname'] ?: ($client['firstname'] . ' ' . $client['lastname'])),
             0, 150, 'UTF-8'
@@ -293,18 +362,20 @@ class NfseXmlBuilder
 
         $x = '<toma>';
 
-        if (strlen($doc) === 14) {
-            $x .= '<CNPJ>' . $doc . '</CNPJ>';
-        } elseif (strlen($doc) === 11) {
-            $x .= '<CPF>' . $doc . '</CPF>';
-        } else {
-            // Estrangeiro sem documento - usa NIF
-            $nif = preg_replace('/[^a-zA-Z0-9]/', '', $doc);
-            if (empty($nif)) {
-                $nif = 'NAO_INFORMADO';
-            }
-            $x .= '<NIF>' . htmlspecialchars(substr($nif, 0, 40), ENT_QUOTES, 'UTF-8') . '</NIF>';
-            $x .= '<cNaoNIF>3</cNaoNIF>';
+        $docInfo = $this->resolveTomadorDocumento($client);
+        switch ($docInfo['tipo']) {
+            case 'cnpj':
+                $x .= '<CNPJ>' . $docInfo['valor'] . '</CNPJ>';
+                break;
+            case 'cpf':
+                $x .= '<CPF>' . $docInfo['valor'] . '</CPF>';
+                break;
+            case 'nif':
+                $x .= '<NIF>' . htmlspecialchars($docInfo['valor'], ENT_QUOTES, 'UTF-8') . '</NIF>';
+                break;
+            case 'cnaonif':
+                $x .= '<cNaoNIF>' . $docInfo['valor'] . '</cNaoNIF>';
+                break;
         }
 
         $x .= '<xNome>' . htmlspecialchars($nome, ENT_QUOTES, 'UTF-8') . '</xNome>';
@@ -354,6 +425,12 @@ class NfseXmlBuilder
             return null;
         }
 
+        $cache = $this->readCepCache();
+        $cached = $cache[$cepClean] ?? null;
+        if (is_array($cached) && !empty($cached['expires_at']) && $cached['expires_at'] > time()) {
+            return $cached['ibge'] ?: null;
+        }
+
         // Tenta consultar ViaCEP (timeout curto para nao travar emissao)
         $url = 'https://viacep.com.br/ws/' . $cepClean . '/json/';
         $ctx = stream_context_create(array('http' => array('timeout' => 3)));
@@ -361,10 +438,49 @@ class NfseXmlBuilder
         if ($json !== false) {
             $data = json_decode($json, true);
             if (!empty($data['ibge'])) {
+                $cache[$cepClean] = array(
+                    'ibge'       => preg_replace('/\D/', '', $data['ibge']),
+                    'expires_at' => time() + 2592000,
+                );
+                $this->writeCepCache($cache);
                 return $data['ibge'];
             }
         }
+        $cache[$cepClean] = array('ibge' => null, 'expires_at' => time() + 86400);
+        $this->writeCepCache($cache);
         return null;
+    }
+
+    private function readCepCache()
+    {
+        $path = $this->cepCachePath();
+        if (!is_file($path)) {
+            return array();
+        }
+        $data = json_decode((string)@file_get_contents($path), true);
+        return is_array($data) ? $data : array();
+    }
+
+    private function writeCepCache(array $cache): void
+    {
+        $path = $this->cepCachePath();
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        @file_put_contents($path, json_encode($cache));
+    }
+
+    private function cepCachePath(): string
+    {
+        $storage = trim((string)($this->config['storage_path'] ?? ''));
+        if ($storage !== '') {
+            if (defined('ROOTDIR')) {
+                $storage = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $storage);
+            }
+            return rtrim($storage, "/\\") . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . 'viacep_ibge.json';
+        }
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'nfse_nacional_viacep_ibge.json';
     }
 
     private function getCodMunIBGE($city, $state)
