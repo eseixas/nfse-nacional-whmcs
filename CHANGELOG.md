@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.7.1] — 2026-06-15
+
+### Correções
+
+- **Status do certificado** — `getStatus()` removia a senha do `cert_meta.json` antes de descriptografá-la, fazendo o painel exibir "Certificado ilegível" mesmo com PFX e senha válidos; a validação ao vivo do certificado volta a funcionar corretamente.
+- **Dashboard após emissão** — corrigida duplicação do cabeçalho e menu de navegação ao emitir NFS-e manualmente; mensagens de sucesso/erro passam a aparecer uma única vez, logo abaixo do menu.
+
+### Infraestrutura
+
+- **Deploy** — `deploy.ps1` publica o addon via SCP/SSH com staging remoto e `sudo` no servidor; `deploy_ftp.ps1` redireciona para o novo fluxo. Pastas `certs/` e `debug/` não são sobrescritas no deploy.
+
 ## [1.7.0] — 2026-06-05
 
 ### Funcionalidades
