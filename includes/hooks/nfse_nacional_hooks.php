@@ -127,7 +127,17 @@ add_hook('AdminAreaPage', 1, function ($vars) {
     $nfse       = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
     $certStatus = nfse_nacional_cert_status($config);
     $certOk     = nfse_nacional_cert_ready($config);
-    $modLink    = 'addonmodules.php?module=nfse_nacional';
+
+    // Base absoluta (a partir da raiz) para addonmodules.php.
+    // No WHMCS 9 a fatura usa URL amigavel (ex.: /billing/gerenciamento/billing/invoice/59),
+    // entao um link relativo "addonmodules.php" resolveria para o caminho errado (404).
+    $uriPath   = parse_url($uri, PHP_URL_PATH) ?: '';
+    if (preg_match('#^(.*/)billing/invoice/\d+#', $uriPath, $bm)) {
+        $adminBase = $bm[1];                        // .../gerenciamento/
+    } else {
+        $adminBase = rtrim(dirname($uriPath), '/') . '/'; // .../gerenciamento/ (invoices.php)
+    }
+    $modLink    = $adminBase . 'addonmodules.php?module=nfse_nacional';
 
     if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
     if (empty($_SESSION['nfse_nacional_csrf'])) {
@@ -155,17 +165,17 @@ add_hook('AdminAreaPage', 1, function ($vars) {
             <?php if ($nfse->codigo_verificacao): ?> | Cod. Verif.: <code><?= htmlspecialchars($nfse->codigo_verificacao) ?></code><?php endif; ?>
             <br><small class="text-muted">em <?= htmlspecialchars((string)$nfse->emitida_em) ?></small>
             <br><br>
-            <a href="addonmodules.php?module=nfse_nacional&action=ver_nfse&invoice_id=<?= $invoiceId ?>"
+            <a href="<?= $modLink ?>&action=ver_nfse&invoice_id=<?= $invoiceId ?>"
                class="btn btn-xs btn-info" target="_blank">
                 <i class="fa fa-eye"></i> Ver NFS-e
             </a>
             &nbsp;
-            <a href="addonmodules.php?module=nfse_nacional&action=download_xml&invoice_id=<?= $invoiceId ?>"
+            <a href="<?= $modLink ?>&action=download_xml&invoice_id=<?= $invoiceId ?>"
                class="btn btn-xs btn-default">
                 <i class="fa fa-download"></i> Baixar XML
             </a>
             &nbsp;
-            <a href="addonmodules.php?module=nfse_nacional&action=download_pdf&invoice_id=<?= $invoiceId ?>"
+            <a href="<?= $modLink ?>&action=download_pdf&invoice_id=<?= $invoiceId ?>"
                class="btn btn-xs btn-default">
                 <i class="fa fa-file-pdf-o"></i> Baixar PDF
             </a>
@@ -202,7 +212,7 @@ add_hook('AdminAreaPage', 1, function ($vars) {
                     <i class="fa fa-paper-plane"></i> Emitir NFS-e
                 </button>
                 <?php if (!$certOk): ?>
-                <a href="addonmodules.php?module=nfse_nacional&action=upload_cert" class="btn btn-sm btn-warning">
+                <a href="<?= $modLink ?>&action=upload_cert" class="btn btn-sm btn-warning">
                     <i class="fa fa-certificate"></i> <?= ($certStatus['state'] ?? '') === 'expired' ? 'Renovar Certificado' : 'Configurar Certificado' ?>
                 </a>
                 <br><small class="text-danger"><?= htmlspecialchars((string)($certStatus['error'] ?? 'Configure o certificado digital antes de emitir.')) ?></small>

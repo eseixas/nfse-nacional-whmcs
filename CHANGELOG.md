@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.3] — 2026-07-10
+
+### Correções
+
+- **Botão Emitir na fatura (WHMCS 9)** — o widget da fatura usava links relativos (`addonmodules.php?...`). Nas URLs amigáveis do WHMCS 9 (ex.: `/gerenciamento/billing/invoice/59`) isso resolvia para um caminho inexistente, resultando em "Page Not Found" ao clicar em Emitir. Os links agora são montados a partir da base absoluta do admin (emitir, ver NFS-e, baixar XML/PDF e configurar certificado).
+
 ## [1.7.2] — 2026-07-10
 
 ### Correções
