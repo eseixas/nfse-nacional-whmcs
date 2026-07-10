@@ -1,4 +1,4 @@
-# NFSe Nacional — Addon WHMCS v1.7.1
+# NFSe Nacional — Addon WHMCS v1.7.2
 
 Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 ICP-Brasil).
 
@@ -109,7 +109,7 @@ Tabelas criadas automaticamente na primeira carga:
 ## Observações
 
 - O cancelamento de NFS-e via API (`POST /nfse/{chave}/eventos`) retorna HTTP 500 no servidor da Receita Federal para determinados cenários (bug confirmado). Use o [Emissor Nacional](https://www.nfse.gov.br/EmissorNacional) para cancelar manualmente quando necessário.
-- Emissão manual e emissão pelo hook de pagamento exigem fatura paga. O modo **Ao emitir a fatura** permite emissão antes do pagamento por decisão operacional do usuário.
+- A emissão pelo hook de pagamento (`InvoicePaid`) exige fatura paga. A **emissão manual** (botão no dashboard) e o modo **Ao emitir a fatura** permitem emissão antes do pagamento, por decisão operacional do usuário.
 - Apenas municípios aderentes ao Padrão Nacional são suportados. Verifique em [nfse.gov.br](https://www.nfse.gov.br).
 - O certificado digital **não deve ser versionado**. Configure um caminho protegido fora do webroot para novos uploads; o diretório legado `certs/` continua compatível para instalações existentes.
 - A senha do certificado é gravada com `encrypt()` / `decrypt()` do WHMCS. O formato legado continua apenas para leitura/migração.

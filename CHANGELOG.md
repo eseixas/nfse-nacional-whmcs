@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.2] — 2026-07-10
+
+### Correções
+
+- **Emissão manual** — o botão de emitir no dashboard passa a permitir emissão mesmo com a fatura em aberto (`allow_unpaid`), tratando a ação manual como decisão operacional do operador. Antes, exigia fatura `Paid` independentemente do modo do cliente. O hook `InvoicePaid` continua exigindo fatura paga.
+
 ## [1.7.1] — 2026-06-15
 
 ### Correções

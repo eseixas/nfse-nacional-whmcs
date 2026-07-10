@@ -352,7 +352,9 @@ class NfseController
             return;
         }
 
-        $result = $this->service->emitirParaFatura($invoiceId);
+        // Emissao manual e uma acao explicita do operador: permite emitir mesmo
+        // com a fatura ainda em aberto (decisao operacional, igual ao modo "invoice").
+        $result = $this->service->emitirParaFatura($invoiceId, ['allow_unpaid' => true]);
         $this->dashboard($result['message'], $result['success'] ? 'success' : 'danger');
     }
 
