@@ -17,8 +17,14 @@ require_once __DIR__ . '/CertManager.php';
 require_once __DIR__ . '/NfseXmlBuilder.php';
 require_once __DIR__ . '/NfseSigner.php';
 require_once __DIR__ . '/NfseApiClient.php';
+require_once __DIR__ . '/NfseEmissionPolicy.php';
+require_once __DIR__ . '/NfseStorage.php';
 
 use WHMCS\Database\Capsule;
+
+class NfseAlreadyEmittedException extends \Exception
+{
+}
 
 class NfseService
 {
@@ -41,21 +47,42 @@ class NfseService
 
     private function debugDir(): string
     {
-        $storage = trim((string)($this->config['storage_path'] ?? ''));
-        if ($storage !== '') {
-            if (defined('ROOTDIR')) {
-                $storage = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $storage);
-            }
-            $dir = rtrim($storage, "/\\") . DIRECTORY_SEPARATOR . 'debug';
-        } else {
-            $dir = __DIR__ . '/../debug';
-        }
-        if (!is_dir($dir)) {
-            mkdir($dir, 0750, true);
-            file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");
-            file_put_contents($dir . '/index.php', '<?php // silence');
-        }
+        $dir = NfseStorage::debugDir((array)$this->config);
+        NfseStorage::protectDir($dir);
         return $dir;
+    }
+
+    private function ts(): string
+    {
+        return date('Y-m-d H:i:s');
+    }
+
+    /**
+     * Serializa emissoes da mesma fatura (GET_LOCK). Evita dois POSTs com DPS distintas.
+     */
+    private function withInvoiceLock(int $invoiceId, callable $fn)
+    {
+        $name = 'nfse_nacional_inv_' . $invoiceId;
+        $rows = Capsule::select('SELECT GET_LOCK(?, 60) AS acquired', [$name]);
+        $first = $rows[0] ?? null;
+        if (is_object($first)) {
+            $acquired = (int)($first->acquired ?? 0);
+        } elseif (is_array($first)) {
+            $acquired = (int)($first['acquired'] ?? 0);
+        } else {
+            $acquired = 0;
+        }
+        if ($acquired !== 1) {
+            return [
+                'success' => false,
+                'message' => 'Emissao ja em andamento para a fatura #' . $invoiceId . '. Aguarde e tente novamente.',
+            ];
+        }
+        try {
+            return $fn();
+        } finally {
+            Capsule::select('SELECT RELEASE_LOCK(?)', [$name]);
+        }
     }
 
     private function debugWrite(string $filename, string $content): void
@@ -89,218 +116,264 @@ class NfseService
 
     public function emitirParaFatura($invoiceId, array $options = array())
     {
+        $invoiceId = (int)$invoiceId;
         try {
-            $allowUnpaid = !empty($options['allow_unpaid']);
+            return $this->withInvoiceLock($invoiceId, function () use ($invoiceId, $options) {
+                return $this->emitirParaFaturaLocked($invoiceId, $options);
+            });
+        } catch (NfseAlreadyEmittedException $e) {
+            return array('success' => false, 'message' => $e->getMessage());
+        } catch (\Throwable $e) {
+            $this->log('error', 'emissao', 'Excecao: ' . $e->getMessage(),
+                array('class' => get_class($e)), $invoiceId);
+            return array('success' => false, 'message' => 'Erro interno: ' . $e->getMessage());
+        }
+    }
 
-            // Verifica se ja existe NFS-e emitida
-            $existing = Capsule::table('mod_nfse_nacional')
-                ->where('invoice_id', $invoiceId)
-                ->where('status', 'emitida')
-                ->first();
+    private function emitirParaFaturaLocked(int $invoiceId, array $options): array
+    {
+        $allowUnpaid = !empty($options['allow_unpaid']);
 
-            if ($existing) {
-                return array('success' => false,
-                    'message' => 'Ja existe NFS-e emitida para a fatura #' . $invoiceId . ' (Numero: ' . $existing->numero_nfse . ')');
-            }
+        $certStatus = $this->certMgr->getStatus();
+        if ($certStatus['state'] === 'missing') {
+            return array('success' => false,
+                'message' => 'Certificado digital nao configurado. Acesse Addons > NFS-e > Certificado Digital.');
+        }
+        if (!$this->certMgr->isReady()) {
+            return array('success' => false,
+                'message' => $certStatus['error'] ?: 'Certificado digital indisponivel para emissao.');
+        }
 
-            $certStatus = $this->certMgr->getStatus();
-            if ($certStatus['state'] === 'missing') {
-                return array('success' => false,
-                    'message' => 'Certificado digital nao configurado. Acesse Addons > NFS-e > Certificado Digital.');
-            }
-            if (!$this->certMgr->isReady()) {
-                return array('success' => false,
-                    'message' => $certStatus['error'] ?: 'Certificado digital indisponivel para emissao.');
-            }
+        $invoice = $this->getInvoice($invoiceId);
+        if (!$invoice) {
+            return array('success' => false, 'message' => 'Fatura #' . $invoiceId . ' nao encontrada.');
+        }
 
-            $invoice = $this->getInvoice($invoiceId);
-            if (!$invoice) {
-                return array('success' => false, 'message' => 'Fatura #' . $invoiceId . ' nao encontrada.');
-            }
+        if (!$allowUnpaid && $invoice['status'] !== 'Paid') {
+            return array('success' => false,
+                'blocked_by_status' => true,
+                'message' => 'A fatura #' . $invoiceId . ' nao esta paga (status: ' . $invoice['status'] . ').');
+        }
 
-            if (!$allowUnpaid && $invoice['status'] !== 'Paid') {
-                return array('success' => false,
-                    'blocked_by_status' => true,
-                    'message' => 'A fatura #' . $invoiceId . ' nao esta paga (status: ' . $invoice['status'] . ').');
-            }
+        $client = $this->getClient($invoice['userid']);
+        if (!$client) {
+            return array('success' => false, 'message' => 'Cliente nao encontrado para a fatura #' . $invoiceId . '.');
+        }
 
-            $client = $this->getClient($invoice['userid']);
-            if (!$client) {
-                return array('success' => false, 'message' => 'Cliente nao encontrado para a fatura #' . $invoiceId . '.');
-            }
+        $docError = NfseXmlBuilder::validarDocumentoTomador($client);
+        if ($docError) {
+            return array('success' => false, 'message' => $docError);
+        }
 
-            $docError = NfseXmlBuilder::validarDocumentoTomador($client);
-            if ($docError) {
-                return array('success' => false, 'message' => $docError);
-            }
+        $certs  = $this->certMgr->read();
+        $signer = new NfseSigner($certs);
 
-            // Carrega certificado e cria o assinador
-            $certs  = $this->certMgr->read();
-            $signer = new NfseSigner($certs);
+        $valorIss    = round($invoice['total'] * ((float)($this->config['aliquota_iss'] ?? 2) / 100), 2);
+        $hasValorIss = in_array('valor_iss', Capsule::schema()->getColumnListing('mod_nfse_nacional'), true);
+        $offset      = max(1, (int)($this->config['ndps_offset'] ?? 1));
 
-            $valorIss    = round($invoice['total'] * ((float)($this->config['aliquota_iss'] ?? 2) / 100), 2);
-            $hasValorIss = in_array('valor_iss', Capsule::schema()->getColumnListing('mod_nfse_nacional'));
+        [$recordId, $nDps, $xmlAssinado] = Capsule::transaction(
+            function () use ($invoice, $client, $invoiceId, $signer, $valorIss, $hasValorIss, $offset) {
+                $existing = Capsule::table('mod_nfse_nacional')
+                    ->where('invoice_id', $invoiceId)
+                    ->lockForUpdate()
+                    ->first();
 
-            // Aloca n_dps, constroi, assina, valida e persiste em uma unica transacao com lock.
-            // O SELECT lockForUpdate() impede que duas emissoes simultaneas peguem o mesmo n_dps.
-            [$recordId, $nDps, $xmlAssinado] = Capsule::transaction(
-                function () use ($invoice, $client, $invoiceId, $signer, $valorIss, $hasValorIss) {
-                    $offset = max(1, (int)($this->config['ndps_offset'] ?? 1));
-                    $nDps   = max(
+                $plan = NfseEmissionPolicy::plan($existing, $offset);
+
+                if ($plan['action'] === NfseEmissionPolicy::ABORT_EMITTED) {
+                    throw new NfseAlreadyEmittedException(
+                        'Ja existe NFS-e emitida para a fatura #' . $invoiceId
+                        . ' (Numero: ' . ($existing->numero_nfse ?? '') . ')'
+                    );
+                }
+
+                if ($plan['action'] === NfseEmissionPolicy::REUSE_XML && $plan['xml'] !== null) {
+                    return array($existing->id, $plan['n_dps'], $plan['xml']);
+                }
+
+                if ($plan['action'] === NfseEmissionPolicy::REBUILD_SAME_NDPS) {
+                    $nDps = (int)$plan['n_dps'];
+                } else {
+                    $nDps = max(
                         $offset,
                         (int) Capsule::table('mod_nfse_nacional')->lockForUpdate()->max('n_dps') + 1
                     );
-
-                    $xmlDps = $this->builder->buildDps($invoice, $client, $nDps);
-                    if (!preg_match('/Id="([^"]+)"/', $xmlDps, $m)) {
-                        throw new \Exception('Id nao encontrado no XML da DPS.');
-                    }
-                    $xmlAssinado = $signer->sign($xmlDps, '#' . $m[1]);
-
-                    libxml_use_internal_errors(true);
-                    $dom = new \DOMDocument();
-                    if (!$dom->loadXML($xmlAssinado, LIBXML_NONET)) {
-                        $errs = array_map(function ($e) { return $e->message; }, libxml_get_errors());
-                        libxml_clear_errors();
-                        throw new \Exception('XML da DPS invalido: ' . implode('; ', $errs));
-                    }
-                    libxml_clear_errors();
-
-                    $existing2 = Capsule::table('mod_nfse_nacional')->where('invoice_id', $invoiceId)->first();
-                    if ($existing2) {
-                        $updateData = array(
-                            'client_id'    => $invoice['userid'],
-                            'valor'        => $invoice['total'],
-                            'n_dps'        => $nDps,
-                            'status'       => 'pendente',
-                            'xml_enviado'  => $xmlAssinado,
-                            'xml_retorno'  => null,
-                            'mensagem_erro'=> null,
-                            'updated_at'   => now(),
-                        );
-                        if ($hasValorIss) { $updateData['valor_iss'] = $valorIss; }
-                        Capsule::table('mod_nfse_nacional')->where('id', $existing2->id)->update($updateData);
-                        return array($existing2->id, $nDps, $xmlAssinado);
-                    } else {
-                        $insertData = array(
-                            'invoice_id'  => $invoiceId,
-                            'client_id'   => $invoice['userid'],
-                            'valor'       => $invoice['total'],
-                            'status'      => 'pendente',
-                            'xml_enviado' => $xmlAssinado,
-                            'n_dps'       => $nDps,
-                            'created_at'  => now(),
-                            'updated_at'  => now(),
-                        );
-                        if ($hasValorIss) { $insertData['valor_iss'] = $valorIss; }
-                        $id = Capsule::table('mod_nfse_nacional')->insertGetId($insertData);
-                        return array($id, $nDps, $xmlAssinado);
-                    }
                 }
+
+                $xmlAssinado = $this->buildAndSignDps($invoice, $client, $nDps, $signer);
+                $recordId = $this->persistPendente(
+                    $existing,
+                    $invoiceId,
+                    $invoice,
+                    $nDps,
+                    $xmlAssinado,
+                    $valorIss,
+                    $hasValorIss
+                );
+
+                return array($recordId, $nDps, $xmlAssinado);
+            }
+        );
+
+        $this->debugWrite('debug_dps_' . $invoiceId . '.xml', $xmlAssinado);
+
+        $cnpj     = preg_replace('/\D/', '', $this->config['cnpj']);
+        $response = $this->getApi()->emitir($xmlAssinado, $cnpj);
+
+        if ($response['success']) {
+            $numeroNfse   = $response['numero_nfse']  ?? null;
+            $chaveAcesso  = $response['chave_acesso'] ?? null;
+            $xmlRetorno   = !empty($response['nfse_xml']) ? $response['nfse_xml'] : $response['raw'];
+            $nDfse        = $response['n_dfse'] ?? null;
+
+            $updateData = array(
+                'numero_nfse'       => $numeroNfse,
+                'codigo_verificacao'=> $chaveAcesso,
+                'status'            => 'emitida',
+                'xml_retorno'       => $xmlRetorno,
+                'mensagem_erro'     => null,
+                'emitida_em'        => $this->ts(),
+                'updated_at'        => $this->ts(),
             );
-
-            $this->debugWrite('debug_dps_' . $invoiceId . '.xml', $xmlAssinado);
-
-            // Envia para a API NFSe Nacional
-            $cnpj     = preg_replace('/\D/', '', $this->config['cnpj']);
-            $response = $this->getApi()->emitir($xmlAssinado, $cnpj);
-
-            if ($response['success']) {
-                $numeroNfse   = $response['numero_nfse']  ?? null;
-                $chaveAcesso  = $response['chave_acesso'] ?? null;
-                // Prefere o XML da NFSe descomprimido; fallback para raw
-                $xmlRetorno   = !empty($response['nfse_xml']) ? $response['nfse_xml'] : $response['raw'];
-                $nDfse        = $response['n_dfse'] ?? null;
-
-                $updateData = array(
-                    'numero_nfse'       => $numeroNfse,
-                    'codigo_verificacao'=> $chaveAcesso,
-                    'status'            => 'emitida',
-                    'xml_retorno'       => $xmlRetorno,
-                    'emitida_em'        => now(),
-                    'updated_at'        => now(),
-                );
-                if ($nDfse !== null) {
-                    $updateData['n_dfse'] = $nDfse;
-                }
-
-                Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update($updateData);
-
-                $this->addNoteToInvoice($invoiceId, $numeroNfse ?? 'N/D');
-                $this->log('success', 'emissao',
-                    'NFS-e #' . $numeroNfse . ' emitida para fatura #' . $invoiceId,
-                    $response, $invoiceId);
-
-                return array(
-                    'success' => true,
-                    'message' => 'NFS-e emitida com sucesso! Numero: ' . ($numeroNfse ?? 'Aguardando'),
-                    'data'    => $response,
-                );
+            if ($nDfse !== null) {
+                $updateData['n_dfse'] = $nDfse;
             }
 
-            // E0014: DPS ja emitida anteriormente - consulta nota existente pelo idDPS
-            $rawJson = json_decode($response['raw'] ?? '{}', true);
-            $erroE0014 = false;
-            $idDpsRetornado = $rawJson['idDPS'] ?? null;
+            Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update($updateData);
+
+            $this->addNoteToInvoice($invoiceId, $numeroNfse ?? 'N/D');
+            $this->log('success', 'emissao',
+                'NFS-e #' . $numeroNfse . ' emitida para fatura #' . $invoiceId,
+                $this->logSafeResponse($response), $invoiceId);
+
+            return array(
+                'success' => true,
+                'message' => 'NFS-e emitida com sucesso! Numero: ' . ($numeroNfse ?? 'Aguardando'),
+                'data'    => $response,
+            );
+        }
+
+        $rawJson = json_decode($response['raw'] ?? '{}', true);
+        $erroE0014 = false;
+        $idDpsRetornado = is_array($rawJson) ? ($rawJson['idDPS'] ?? null) : null;
+        if (is_array($rawJson)) {
             foreach (($rawJson['erros'] ?? array()) as $err) {
                 if (($err['Codigo'] ?? '') === 'E0014') {
                     $erroE0014 = true;
                     break;
                 }
             }
+        }
+        if (!$idDpsRetornado && preg_match('/infDPS Id="([^"]+)"/', $xmlAssinado, $mxId)) {
+            $idDpsRetornado = $mxId[1];
+        }
 
-            if ($erroE0014 && !empty($idDpsRetornado)) {
-                // Nota ja existe na Receita - consulta via API para obter numero e chave
-                $consultaResp = $this->getApi()->consultarPorIdDps($idDpsRetornado);
-                if ($consultaResp['success'] && !empty($consultaResp['numero_nfse'])) {
-                    Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update(array(
-                        'numero_nfse'       => $consultaResp['numero_nfse'],
-                        'codigo_verificacao'=> $consultaResp['chave_acesso'] ?? null,
-                        'status'            => 'emitida',
-                        'xml_retorno'       => $consultaResp['raw'],
-                        'mensagem_erro'     => null,
-                        'emitida_em'        => now(),
-                        'updated_at'        => now(),
-                    ));
-                    $this->addNoteToInvoice($invoiceId, $consultaResp['numero_nfse']);
-                    $this->log('success', 'emissao',
-                        'NFS-e #' . $consultaResp['numero_nfse'] . ' recuperada (E0014) para fatura #' . $invoiceId,
-                        $consultaResp, $invoiceId);
-                    return array(
-                        'success' => true,
-                        'message' => 'NFS-e ja existente recuperada! Numero: ' . $consultaResp['numero_nfse'],
-                        'data'    => $consultaResp,
-                    );
-                }
-                // Consulta falhou: salva como emitida sem numero (melhor que erro)
+        if ($erroE0014 && !empty($idDpsRetornado)) {
+            $consultaResp = $this->getApi()->consultarPorIdDps($idDpsRetornado);
+            if ($consultaResp['success'] && !empty($consultaResp['numero_nfse'])) {
+                $xmlRetorno = !empty($consultaResp['nfse_xml']) ? $consultaResp['nfse_xml'] : $consultaResp['raw'];
                 Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update(array(
-                    'status'        => 'emitida',
-                    'mensagem_erro' => 'E0014: DPS ja emitida. Consulte manualmente o numero da nota.',
-                    'updated_at'    => now(),
+                    'numero_nfse'       => $consultaResp['numero_nfse'],
+                    'codigo_verificacao'=> $consultaResp['chave_acesso'] ?? null,
+                    'status'            => 'emitida',
+                    'xml_retorno'       => $xmlRetorno,
+                    'mensagem_erro'     => null,
+                    'emitida_em'        => $this->ts(),
+                    'updated_at'        => $this->ts(),
                 ));
-                return array('success' => true,
-                    'message' => 'NFS-e ja havia sido emitida (E0014). Verifique o numero no portal.');
+                $this->addNoteToInvoice($invoiceId, $consultaResp['numero_nfse']);
+                $this->log('success', 'emissao',
+                    'NFS-e #' . $consultaResp['numero_nfse'] . ' recuperada (E0014) para fatura #' . $invoiceId,
+                    $this->logSafeResponse($consultaResp), $invoiceId);
+                return array(
+                    'success' => true,
+                    'message' => 'NFS-e ja existente recuperada! Numero: ' . $consultaResp['numero_nfse'],
+                    'data'    => $consultaResp,
+                );
             }
 
-            // Erro na transmissao
             Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update(array(
-                'status'        => 'erro',
-                'xml_retorno'   => $response['raw'],
-                'mensagem_erro' => $response['error'],
-                'updated_at'    => now(),
+                'status'        => 'pendente',
+                'mensagem_erro' => 'E0014: DPS ja emitida na SEFIN. A consulta do numero falhou; retente para recuperar.',
+                'updated_at'    => $this->ts(),
             ));
-
-            $this->log('error', 'emissao',
-                'Erro ao emitir NFS-e para fatura #' . $invoiceId . ': ' . $response['error'],
-                $response, $invoiceId);
-
-            return array('success' => false, 'message' => 'Erro ao emitir NFS-e: ' . $response['error']);
-
-        } catch (Exception $e) {
-            $this->log('error', 'emissao', 'Excecao: ' . $e->getMessage(),
-                array('trace' => $e->getTraceAsString()), $invoiceId);
-            return array('success' => false, 'message' => 'Erro interno: ' . $e->getMessage());
+            return array(
+                'success' => false,
+                'message' => 'DPS ja existe na SEFIN (E0014), mas a consulta do numero falhou. Tente novamente para recuperar a nota.',
+            );
         }
+
+        Capsule::table('mod_nfse_nacional')->where('id', $recordId)->update(array(
+            'status'        => 'erro',
+            'xml_retorno'   => $response['raw'],
+            'mensagem_erro' => $response['error'],
+            'updated_at'    => $this->ts(),
+        ));
+
+        $this->log('error', 'emissao',
+            'Erro ao emitir NFS-e para fatura #' . $invoiceId . ': ' . $response['error'],
+            $this->logSafeResponse($response), $invoiceId);
+
+        return array('success' => false, 'message' => 'Erro ao emitir NFS-e: ' . $response['error']);
+    }
+
+    private function buildAndSignDps(array $invoice, array $client, int $nDps, NfseSigner $signer): string
+    {
+        $xmlDps = $this->builder->buildDps($invoice, $client, $nDps);
+        if (!preg_match('/Id="([^"]+)"/', $xmlDps, $m)) {
+            throw new \Exception('Id nao encontrado no XML da DPS.');
+        }
+        $xmlAssinado = $signer->sign($xmlDps, '#' . $m[1]);
+
+        libxml_use_internal_errors(true);
+        $dom = new \DOMDocument();
+        if (!$dom->loadXML($xmlAssinado, LIBXML_NONET)) {
+            $errs = array_map(function ($e) { return $e->message; }, libxml_get_errors());
+            libxml_clear_errors();
+            throw new \Exception('XML da DPS invalido: ' . implode('; ', $errs));
+        }
+        libxml_clear_errors();
+
+        return $xmlAssinado;
+    }
+
+    private function persistPendente($existing, int $invoiceId, array $invoice, int $nDps, string $xmlAssinado, $valorIss, bool $hasValorIss): int
+    {
+        $data = array(
+            'client_id'     => $invoice['userid'],
+            'valor'         => $invoice['total'],
+            'n_dps'         => $nDps,
+            'status'        => 'pendente',
+            'xml_enviado'   => $xmlAssinado,
+            'xml_retorno'   => null,
+            'mensagem_erro' => null,
+            'updated_at'    => $this->ts(),
+        );
+        if ($hasValorIss) {
+            $data['valor_iss'] = $valorIss;
+        }
+
+        if ($existing) {
+            Capsule::table('mod_nfse_nacional')->where('id', $existing->id)->update($data);
+            return (int)$existing->id;
+        }
+
+        $data['invoice_id'] = $invoiceId;
+        $data['created_at'] = $this->ts();
+        return (int) Capsule::table('mod_nfse_nacional')->insertGetId($data);
+    }
+
+    private function logSafeResponse(array $response): array
+    {
+        return array(
+            'success'      => $response['success'] ?? null,
+            'http_code'    => $response['http_code'] ?? null,
+            'error'        => $response['error'] ?? null,
+            'numero_nfse'  => $response['numero_nfse'] ?? null,
+            'chave_acesso' => $response['chave_acesso'] ?? null,
+            'n_dfse'       => $response['n_dfse'] ?? null,
+        );
     }
 
     // --- Cancelamento --------------------------------------------------------
@@ -320,18 +393,15 @@ class NfseService
             $certs  = $this->certMgr->read();
             $signer = new NfseSigner($certs);
 
-            // Resolve chave de acesso completa (53 chars: NFS + 50 digitos)
             $chaveAcesso = $record->codigo_verificacao ?? null;
             $chaveValida = !empty($chaveAcesso) && strlen($chaveAcesso) >= 50;
 
-            // Tenta extrair do xml_retorno se chave invalida/truncada
             if (!$chaveValida && !empty($record->xml_retorno)) {
                 if (preg_match('/infNFSe\s[^>]*Id="([^"]{50,})"/', $record->xml_retorno, $mx)) {
                     $chaveAcesso = $mx[1]; $chaveValida = true;
                 }
             }
 
-            // Recupera via API usando idDPS do xml_enviado
             if (!$chaveValida && !empty($record->xml_enviado)) {
                 if (preg_match('/infDPS Id="([^"]+)"/', $record->xml_enviado, $mx)) {
                     $consultaApi = $this->getApi()->consultarPorIdDps($mx[1]);
@@ -340,7 +410,7 @@ class NfseService
                         $upd = array('codigo_verificacao' => $chaveAcesso);
                         if (!empty($consultaApi['nfse_xml'])) $upd['xml_retorno'] = $consultaApi['nfse_xml'];
                         if (!empty($consultaApi['n_dfse']))   $upd['n_dfse'] = $consultaApi['n_dfse'];
-                        try { Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update($upd); } catch (Exception $ig) {}
+                        try { Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update($upd); } catch (\Exception $ig) {}
                     }
                 }
             }
@@ -350,14 +420,12 @@ class NfseService
                     'Nao foi possivel determinar a chave de acesso. A nota pode ter sido emitida antes da correcao do banco.');
             }
 
-            try { Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update(array('codigo_verificacao' => $chaveAcesso)); } catch (Exception $ig) {}
+            try { Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update(array('codigo_verificacao' => $chaveAcesso)); } catch (\Exception $ig) {}
 
-            // Consulta GET /nfse/{chave} para verificar estado atual da nota no servidor
             $chaveUrl = preg_match('/^NFS(.{50})$/i', $chaveAcesso, $mxg) ? $mxg[1] : $chaveAcesso;
             $chaveUrl = substr(trim($chaveUrl), 0, 50);
             $getResp  = $this->getApi()->consultarPorChave($chaveUrl);
 
-            // Decodifica o XML retornado pelo GET (pode ser gzip ou JSON com campo nfseXmlGZipB64)
             $getXml = '';
             if (!empty($getResp['raw'])) {
                 $raw = $getResp['raw'];
@@ -379,20 +447,18 @@ class NfseService
                 substr($getXml, 0, 2000) . "\n"
             );
 
-            // Se GET retornou 404, a nota nao existe neste ambiente
             if (!$getResp['success'] && ($getResp['http_code'] ?? 0) == 404) {
                 return array('success' => false, 'message' =>
                     'Nota nao encontrada no servidor (GET 404). A nota pode ter sido emitida em ambiente diferente ou o prazo de cancelamento expirou.');
             }
 
-            // Se GET mostra nota ja cancelada (cStat=101), atualiza banco e retorna sucesso
             if (!empty($getXml) && strpos($getXml, '<cStat>101</cStat>') !== false) {
                 try {
                     Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update(array(
                         'status'     => 'cancelada',
-                        'updated_at' => now(),
+                        'updated_at' => $this->ts(),
                     ));
-                } catch (Exception $ig) {}
+                } catch (\Exception $ig) {}
                 $this->log('success', 'cancelamento',
                     'NFS-e #' . $record->numero_nfse . ' ja estava cancelada no servidor. Status atualizado.', array(), $invoiceId);
                 return array('success' => true, 'message' =>
@@ -400,13 +466,11 @@ class NfseService
             }
 
             $nDfse = $record->n_dfse ?? '';
-            // Se n_dfse nao esta no banco, tenta extrair do xml_retorno
             if (empty($nDfse) && !empty($record->xml_retorno)) {
                 if (preg_match('/<nDFSe[^>]*>([^<]+)<\/nDFSe>/', $record->xml_retorno, $mn)) {
                     $nDfse = trim($mn[1]);
                 }
             }
-            // Tenta extrair nDFSe e cOrgao do XML do GET (fonte mais confiavel)
             if (!empty($getXml)) {
                 if (preg_match('/<nDFSe[^>]*>([^<]+)<\/nDFSe>/', $getXml, $mn2)) {
                     $nDfse = trim($mn2[1]);
@@ -436,8 +500,7 @@ class NfseService
 
             $response = $this->getApi()->cancelar($xmlAssinado, $chaveAcesso);
 
-            // Acrescenta resultado no debug
-            $this->debugAppend($debugUrl, 
+            $this->debugAppend($debugUrl,
                 "---\n" .
                 "success: " . ($response['success'] ? 'true' : 'false') . "\n" .
                 "http_code: " . ($response['http_code'] ?? '?') . "\n" .
@@ -448,7 +511,7 @@ class NfseService
             if ($response['success']) {
                 Capsule::table('mod_nfse_nacional')->where('id', $record->id)->update(array(
                     'status'     => 'cancelada',
-                    'updated_at' => now(),
+                    'updated_at' => $this->ts(),
                 ));
                 $this->log('success', 'cancelamento',
                     'NFS-e #' . $record->numero_nfse . ' cancelada.', array(), $invoiceId);
@@ -457,7 +520,7 @@ class NfseService
 
             return array('success' => false, 'message' => 'Erro ao cancelar: ' . $response['error']);
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return array('success' => false, 'message' => 'Erro: ' . $e->getMessage());
         }
     }
@@ -471,7 +534,7 @@ class NfseService
         $inv = (array)$inv;
 
         $items = Capsule::table('tblinvoiceitems')->where('invoiceid', $id)->get();
-        $inv['items'] = array_map(function($i) { return (array)$i; }, $items->toArray());
+        $inv['items'] = array_map(function ($i) { return (array)$i; }, $items->toArray());
 
         return $inv;
     }
@@ -482,7 +545,6 @@ class NfseService
         if (!$client) return null;
         $client = (array)$client;
 
-        // Busca CPF/CNPJ em campos personalizados com nomes comuns no WHMCS
         $fieldNames = array('CPF/CNPJ', 'CNPJ/CPF', 'CPF ou CNPJ', 'CNPJ', 'CPF');
         $cfRows = Capsule::table('tblcustomfieldsvalues')
             ->join('tblcustomfields', 'tblcustomfieldsvalues.fieldid', '=', 'tblcustomfields.id')
@@ -513,7 +575,6 @@ class NfseService
         return $client;
     }
 
-
     private function addNoteToInvoice($invoiceId, $numeroNfse)
     {
         $notes = Capsule::table('tblinvoices')->where('id', $invoiceId)->value('notes');
@@ -532,15 +593,11 @@ class NfseService
                 'acao'       => $acao,
                 'mensagem'   => $msg,
                 'dados'      => $dados ? json_encode($dados, JSON_UNESCAPED_UNICODE) : null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'created_at' => $this->ts(),
+                'updated_at' => $this->ts(),
             ));
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             // silencia
         }
     }
-}
-
-if (!function_exists('now')) {
-    function now() { return date('Y-m-d H:i:s'); }
 }

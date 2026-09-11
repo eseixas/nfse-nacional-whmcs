@@ -4,7 +4,7 @@
  * Emissao de Nota Fiscal de Servico Eletronica
  * Padrao: NFSe Nacional SPED v1.00 | API REST SefinNacional
  *
- * @version 1.7.3
+ * @version 1.7.4
  */
 
 if (!defined("WHMCS")) {
@@ -20,7 +20,7 @@ function nfse_nacional_config()
     return [
         'name'        => 'NFSE Nacional',
         'description' => 'Emissao de NFS-e via API REST NFSe Nacional (SefinNacional SPED v1.00)',
-        'version'     => '1.7.3',
+        'version'     => '1.7.4',
         'author'      => '',
         'language'    => 'portuguese-br',
         'fields'      => [
@@ -153,7 +153,8 @@ function nfse_nacional_config()
                 'FriendlyName' => 'Caminho de Armazenamento Protegido',
                 'Type'         => 'text',
                 'Size'         => '120',
-                'Description'  => 'Opcional. Caminho fora do webroot para certificados, debug e cache. Aceita {ROOTDIR}. Se vazio, usa o armazenamento legado do addon.',
+                'Default'      => '{ROOTDIR}/../nfse_nacional_data',
+                'Description'  => 'Obrigatorio fora do webroot. Aceita {ROOTDIR}. Padrao: {ROOTDIR}/../nfse_nacional_data. Caminho dentro do WHMCS e recusado.',
             ],
             // -- Numeracao DPS ----------------------------------------------
             'ndps_offset' => [
@@ -262,13 +263,23 @@ function nfse_nacional_ensure_schema()
         });
     }
 
-    $certDir = __DIR__ . '/certs';
-    if (!is_dir($certDir)) {
-        mkdir($certDir, 0700, true);
+    require_once __DIR__ . '/lib/NfseStorage.php';
+    try {
+        $cfg = Capsule::table('tbladdonmodules')
+            ->where('module', 'nfse_nacional')
+            ->pluck('value', 'setting')
+            ->toArray();
+    } catch (\Throwable $e) {
+        $cfg = [];
     }
-    if (is_dir($certDir)) {
-        file_put_contents($certDir . '/.htaccess', "Require all denied\nDeny from all\n");
-        file_put_contents($certDir . '/index.php', "<?php // silence");
+    NfseStorage::protectDir(NfseStorage::certDir($cfg));
+    NfseStorage::protectDir(NfseStorage::debugDir($cfg));
+    NfseStorage::protectDir(NfseStorage::cacheDir($cfg));
+
+    $legacyCertDir = __DIR__ . '/certs';
+    if (is_dir($legacyCertDir)) {
+        file_put_contents($legacyCertDir . '/.htaccess', "Require all denied\nDeny from all\n");
+        file_put_contents($legacyCertDir . '/index.php', "<?php // silence");
     }
 }
 
@@ -297,7 +308,7 @@ function nfse_nacional_activate()
     try {
         nfse_nacional_ensure_schema();
 
-        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.7.3 instalado com sucesso!'];
+        return ['status' => 'success', 'description' => 'Addon NFSE Nacional v1.7.4 instalado com sucesso!'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => 'Erro: ' . $e->getMessage()];
     }

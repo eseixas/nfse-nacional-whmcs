@@ -1,6 +1,8 @@
 <?php
 if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
 
+require_once __DIR__ . '/NfseStorage.php';
+
 /**
  * NfseXmlBuilder
  * Gera o XML da DPS no padrao NFSe Nacional SPED v1.00
@@ -80,19 +82,17 @@ class NfseXmlBuilder
             $regApTrib = '3';
         }
 
-        // Codigos de servico: busca config por produto, fallback para config global
-        $productId = 0;
-        if (!empty($invoice['items'])) {
-            foreach ($invoice['items'] as $item) {
-                if (!empty($item['relid'])) { $productId = (int)$item['relid']; break; }
-            }
-        }
+        // Codigos de servico: tblinvoiceitems.relid de Hosting e tblhosting.id, nao product_id.
+        $productId = self::resolveProductIdFromInvoiceItems(
+            $invoice['items'] ?? array(),
+            [$this, 'lookupHostingProductId']
+        );
         $prodCfg = null;
         if ($productId > 0) {
             try {
                 $prodCfg = \WHMCS\Database\Capsule::table('mod_nfse_nacional_produtos')
                     ->where('product_id', $productId)->first();
-            } catch (Exception $ignored) {}
+            } catch (\Exception $ignored) {}
         }
         $cTribNac = !empty($prodCfg->codigo_tributacao_nacional)
             ? $prodCfg->codigo_tributacao_nacional
@@ -169,9 +169,7 @@ class NfseXmlBuilder
         $x .= '<tribISSQN>1</tribISSQN>';
         $x .= '<tpRetISSQN>' . $tpRetISSQN . '</tpRetISSQN>';
         $x .= '</tribMun>';
-        $x .= '<totTrib>';
-        $x .= '<pTotTribSN>' . $pTotTribSN . '</pTotTribSN>';
-        $x .= '</totTrib>';
+        $x .= $this->buildTotTribXml($opSimpNac, $pTotTribSN);
         $x .= '</trib>';
         $x .= '</valores>';
 
@@ -240,25 +238,74 @@ class NfseXmlBuilder
 
     // --- Helpers -------------------------------------------------------------
 
-    private function buildDiscriminacao($invoice)
+    /**
+     * Item Hosting: relid = tblhosting.id; product_id = tblhosting.packageid.
+     *
+     * @param callable|null $hostingProductId function(int $hostingId): int
+     */
+    public static function resolveProductIdFromInvoiceItems(array $items, $hostingProductId = null): int
     {
-        // Usa notes da fatura (campo Description no WHMCS)
-        $desc = trim($invoice['notes'] ?? '');
-
-        if (empty($desc)) {
-            $items = array();
-            foreach (($invoice['items'] ?? array()) as $item) {
-                if (!empty($item['description'])) {
-                    $items[] = trim($item['description']);
-                }
+        foreach ($items as $item) {
+            $type  = (string)($item['type'] ?? '');
+            $relid = (int)($item['relid'] ?? 0);
+            if ($relid <= 0 || strcasecmp($type, 'Hosting') !== 0) {
+                continue;
             }
-            $desc = $items
-                ? implode(' | ', $items)
-                : ($this->config['discriminacao_padrao'] ?? 'Servicos de tecnologia');
+            if (!is_callable($hostingProductId)) {
+                continue;
+            }
+            $productId = (int)$hostingProductId($relid);
+            if ($productId > 0) {
+                return $productId;
+            }
         }
+        return 0;
+    }
 
-        // Limita a 2000 chars (campo xDescServ max 2000 conforme manual)
-        return mb_substr($desc, 0, 2000, 'UTF-8');
+    private function lookupHostingProductId(int $hostingId): int
+    {
+        try {
+            $row = \WHMCS\Database\Capsule::table('tblhosting')->where('id', $hostingId)->first();
+            return $row ? (int)$row->packageid : 0;
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * totTrib e XOR: pTotTribSN (SN) ou pTotTrib (nao optante). Nunca pTotTribSN fora do SN.
+     */
+    public function buildTotTribXml(string $opSimpNac, string $pTotTribSN): string
+    {
+        $x = '<totTrib>';
+        if ($opSimpNac === '1') {
+            $pMun = number_format((float)($this->config['aliquota_iss'] ?? 0), 2, '.', '');
+            $x .= '<pTotTrib>';
+            $x .= '<pTotTribFed>0.00</pTotTribFed>';
+            $x .= '<pTotTribEst>0.00</pTotTribEst>';
+            $x .= '<pTotTribMun>' . $pMun . '</pTotTribMun>';
+            $x .= '</pTotTrib>';
+        } else {
+            $x .= '<pTotTribSN>' . $pTotTribSN . '</pTotTribSN>';
+        }
+        $x .= '</totTrib>';
+        return $x;
+    }
+
+    public function buildDiscriminacao($invoice)
+    {
+        $items = array();
+        foreach (($invoice['items'] ?? array()) as $item) {
+            $desc = trim((string)($item['description'] ?? ''));
+            if ($desc !== '') {
+                $items[] = $desc;
+            }
+        }
+        if ($items) {
+            return mb_substr(implode(' | ', $items), 0, 2000, 'UTF-8');
+        }
+        $padrao = trim((string)($this->config['discriminacao_padrao'] ?? 'Servicos de tecnologia'));
+        return mb_substr($padrao !== '' ? $padrao : 'Servicos de tecnologia', 0, 2000, 'UTF-8');
     }
 
     /**
@@ -307,12 +354,6 @@ class NfseXmlBuilder
         if (strlen($digits) === 11) {
             return array('tipo' => 'cpf', 'valor' => $digits);
         }
-        if (strlen($digits) === 10) {
-            return array('tipo' => 'cpf', 'valor' => str_pad($digits, 11, '0', STR_PAD_LEFT));
-        }
-        if (strlen($digits) >= 12 && strlen($digits) <= 13) {
-            return array('tipo' => 'cnpj', 'valor' => str_pad($digits, 14, '0', STR_PAD_LEFT));
-        }
 
         if (!self::isClienteBrasileiro($client)) {
             $nif = preg_replace('/[^a-zA-Z0-9]/', '', $raw);
@@ -340,21 +381,15 @@ class NfseXmlBuilder
             trim($client['companyname'] ?: ($client['firstname'] . ' ' . $client['lastname'])),
             0, 150, 'UTF-8'
         );
-        $cep    = str_pad(preg_replace('/\D/', '', $client['postcode'] ?? ''), 8, '0', STR_PAD_LEFT);
-        // Busca IBGE pelo CEP (mais preciso) e so usa mapa de cidade como fallback
-        $ibgeByCep = $this->getCodMunIBGEByCep($cep);
-        if ($ibgeByCep) {
-            $cMun = $ibgeByCep;
-        } else {
-            $cMun = $this->getCodMunIBGE($client['city'] ?? '', $client['state'] ?? '');
-        }
         $email  = trim($client['email'] ?? '');
         $lgr    = mb_substr(trim($client['address1'] ?? ''), 0, 125, 'UTF-8');
         $nro    = 'S/N';
         $cpl    = mb_substr(trim($client['address2'] ?? ''), 0, 60, 'UTF-8');
-        $bairro = mb_substr(trim($client['city'] ?? ''), 0, 60, 'UTF-8');
+        $bairro = mb_substr(trim((string)($client['address2'] ?? '')), 0, 60, 'UTF-8');
+        if ($bairro === '') {
+            $bairro = mb_substr(trim((string)($client['city'] ?? '')), 0, 60, 'UTF-8');
+        }
 
-        // Tenta extrair numero do logradouro
         if (preg_match('/^(.*?)[,\s]+(\d+\S*)\s*$/', $lgr, $m)) {
             $lgr = trim($m[1]);
             $nro = trim($m[2]);
@@ -380,18 +415,26 @@ class NfseXmlBuilder
 
         $x .= '<xNome>' . htmlspecialchars($nome, ENT_QUOTES, 'UTF-8') . '</xNome>';
         $x .= '<end>';
-        $x .= '<endNac>';
-        $x .= '<cMun>' . $cMun . '</cMun>';
-        $x .= '<CEP>' . $cep . '</CEP>';
-        $x .= '</endNac>';
+        $cMun = '';
+        if (self::isClienteBrasileiro($client)) {
+            $cep = str_pad(preg_replace('/\D/', '', $client['postcode'] ?? ''), 8, '0', STR_PAD_LEFT);
+            $ibgeByCep = $this->getCodMunIBGEByCep($cep);
+            $cMun = $ibgeByCep ?: $this->getCodMunIBGE($client['city'] ?? '', $client['state'] ?? '');
+            $x .= '<endNac>';
+            $x .= '<cMun>' . $cMun . '</cMun>';
+            $x .= '<CEP>' . $cep . '</CEP>';
+            $x .= '</endNac>';
+        } else {
+            $x .= $this->buildEndExtXml($client);
+        }
         if (!empty($lgr)) {
             $x .= '<xLgr>' . htmlspecialchars($lgr, ENT_QUOTES, 'UTF-8') . '</xLgr>';
             $x .= '<nro>' . htmlspecialchars($nro, ENT_QUOTES, 'UTF-8') . '</nro>';
         }
-        if (!empty($cpl)) {
+        if (!empty($cpl) && self::isClienteBrasileiro($client)) {
             $x .= '<xCpl>' . htmlspecialchars($cpl, ENT_QUOTES, 'UTF-8') . '</xCpl>';
         }
-        if (!empty($bairro)) {
+        if (!empty($bairro) && self::isClienteBrasileiro($client)) {
             $x .= '<xBairro>' . htmlspecialchars($bairro, ENT_QUOTES, 'UTF-8') . '</xBairro>';
         }
         $x .= '</end>';
@@ -421,7 +464,7 @@ class NfseXmlBuilder
     {
         // CEP deve ter 8 digitos
         $cepClean = preg_replace('/\D/', '', $cep);
-        if (strlen($cepClean) !== 8) {
+        if (strlen($cepClean) !== 8 || $cepClean === '00000000') {
             return null;
         }
 
@@ -471,16 +514,37 @@ class NfseXmlBuilder
         @file_put_contents($path, json_encode($cache));
     }
 
+    private function buildEndExtXml(array $client): string
+    {
+        $pais = strtoupper(trim((string)($client['country'] ?? '')));
+        if ($pais === 'BRAZIL' || $pais === 'BRASIL') {
+            $pais = 'BR';
+        }
+        if (strlen($pais) !== 2) {
+            $pais = 'EX';
+        }
+        $cEndPost = preg_replace('/[^A-Za-z0-9\- ]/', '', (string)($client['postcode'] ?? ''));
+        $xCidade  = mb_substr(trim((string)($client['city'] ?? '')), 0, 60, 'UTF-8');
+        $xEst     = mb_substr(trim((string)($client['state'] ?? '')), 0, 60, 'UTF-8');
+
+        $x = '<endExt>';
+        $x .= '<cPais>' . htmlspecialchars($pais, ENT_QUOTES, 'UTF-8') . '</cPais>';
+        if ($cEndPost !== '') {
+            $x .= '<cEndPost>' . htmlspecialchars(mb_substr($cEndPost, 0, 11, 'UTF-8'), ENT_QUOTES, 'UTF-8') . '</cEndPost>';
+        }
+        if ($xCidade !== '') {
+            $x .= '<xCidade>' . htmlspecialchars($xCidade, ENT_QUOTES, 'UTF-8') . '</xCidade>';
+        }
+        if ($xEst !== '') {
+            $x .= '<xEstProvReg>' . htmlspecialchars($xEst, ENT_QUOTES, 'UTF-8') . '</xEstProvReg>';
+        }
+        $x .= '</endExt>';
+        return $x;
+    }
+
     private function cepCachePath(): string
     {
-        $storage = trim((string)($this->config['storage_path'] ?? ''));
-        if ($storage !== '') {
-            if (defined('ROOTDIR')) {
-                $storage = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $storage);
-            }
-            return rtrim($storage, "/\\") . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . 'viacep_ibge.json';
-        }
-        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'nfse_nacional_viacep_ibge.json';
+        return NfseStorage::cacheDir((array)$this->config) . DIRECTORY_SEPARATOR . 'viacep_ibge.json';
     }
 
     private function getCodMunIBGE($city, $state)

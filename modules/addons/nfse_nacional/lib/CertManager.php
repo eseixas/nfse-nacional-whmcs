@@ -1,11 +1,13 @@
 <?php
 if (!defined("WHMCS")) { die("This file cannot be accessed directly"); }
 
+require_once __DIR__ . '/NfseStorage.php';
+
 /**
  * CertManager
  * Gerencia o upload, armazenamento seguro e leitura do certificado A1 (.pfx/.p12)
- * O certificado e armazenado dentro do addon, fora do webroot de arquivos estaticos,
- * com .htaccess bloqueando acesso direto.
+ * Novos arquivos vao para storage fora do webroot; o diretorio legado do addon
+ * permanece apenas como leitura/migracao.
  */
 class CertManager
 {
@@ -15,13 +17,18 @@ class CertManager
     private $legacyCertDir;
     private $certFile;
     private $metaFile;
+    private $storageError = null;
 
     public function __construct(array $config = array())
     {
         $this->legacyCertDir = __DIR__ . '/../certs';
-        $this->certDir  = $this->resolveCertDir($config);
-        $this->certFile = $this->certDir . '/cert.pfx';
-        $this->metaFile = $this->certDir . '/cert_meta.json';
+        $resolved = NfseStorage::resolveBase($config);
+        if (!$resolved['ok'] && trim((string)($config['storage_path'] ?? '')) !== '') {
+            $this->storageError = $resolved['error'];
+        }
+        $this->certDir  = NfseStorage::certDir($config);
+        $this->certFile = $this->certDir . DIRECTORY_SEPARATOR . 'cert.pfx';
+        $this->metaFile = $this->certDir . DIRECTORY_SEPARATOR . 'cert_meta.json';
     }
 
     /**
@@ -40,8 +47,16 @@ class CertManager
             ];
         }
 
+        if ($this->storageError) {
+            return ['success' => false, 'message' => $this->storageError];
+        }
+
         if (empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) {
             return ['success' => false, 'message' => 'Erro no upload: ' . $this->uploadError($file['error'] ?? -1)];
+        }
+
+        if (!is_uploaded_file($file['tmp_name'])) {
+            return ['success' => false, 'message' => 'Arquivo de certificado invalido.'];
         }
 
         // Valida extensão
@@ -71,12 +86,7 @@ class CertManager
             return ['success' => false, 'message' => 'Certificado VENCIDO em ' . date('d/m/Y', $validTo) . '. Renove antes de continuar.'];
         }
 
-        // Garante que o diretorio existe e esta protegido
-        if (!is_dir($this->certDir)) {
-            mkdir($this->certDir, 0700, true);
-        }
-        file_put_contents($this->certDir . '/.htaccess', "Require all denied\nDeny from all\n");
-        file_put_contents($this->certDir . '/index.php', '<?php // silence');
+        NfseStorage::protectDir($this->certDir);
 
         // Salva o arquivo
         if (file_put_contents($this->certFile, $content) === false) {
@@ -310,24 +320,6 @@ class CertManager
         $parts = explode('::', base64_decode($encrypted), 2);
         if (count($parts) !== 2) return '';
         return openssl_decrypt($parts[1], 'AES-256-CBC', $key, 0, $parts[0]) ?: '';
-    }
-
-    private function resolveCertDir(array $config): string
-    {
-        $base = trim((string)($config['storage_path'] ?? ''));
-        if ($base === '') {
-            return $this->legacyCertDir;
-        }
-
-        if (defined('ROOTDIR')) {
-            $base = str_replace(['{ROOTDIR}', '%ROOTDIR%'], ROOTDIR, $base);
-        }
-        $base = rtrim($base, "/\\");
-        if ($base === '') {
-            return $this->legacyCertDir;
-        }
-
-        return $base . DIRECTORY_SEPARATOR . 'certs';
     }
 
     private function activePaths(): ?array

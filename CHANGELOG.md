@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.4] — 2026-09-11
+
+### Correções
+
+- **Idempotência da emissão** — retry, timeout e clique duplo reutilizam o mesmo `n_dps`/XML (`pendente`) ou reconstroem com o mesmo número (`erro`). Só aloca DPS nova na primeira emissão ou após cancelamento. Lock por fatura (`GET_LOCK`) serializa concorrência. E0014 sem consulta bem-sucedida permanece `pendente` em vez de `emitida` sem número.
+- **Certificado fora do webroot** — padrão `{ROOTDIR}/../nfse_nacional_data`. Caminho dentro do diretório do WHMCS é recusado; o `certs/` do addon fica só como leitura legada.
+- **Configuração por produto** — item `Hosting` resolve `tblhosting.packageid`; `relid` da fatura deixou de ser usado como `product_id`.
+- **totTrib** — Simples Nacional envia `pTotTribSN`; não optante envia `pTotTrib` (sem `pTotTribSN`/`indTotTrib`).
+- **Tomador estrangeiro** — endereço `endExt` (não mais `endNac` com IBGE do prestador).
+- **xDescServ** — montado pelos itens da fatura, não pelas notes internas.
+
+### Testes
+
+- `php tests/run.php` cobre política de emissão, storage, `packageid`, totTrib, endereço e discriminação.
+
 ## [1.7.3] — 2026-07-10
 
 ### Correções
