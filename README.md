@@ -1,4 +1,4 @@
-# NFSe Nacional — Addon WHMCS v1.7.4
+# NFSe Nacional — Addon WHMCS v1.7.5
 
 Addon para emissão de **NFS-e Padrão Nacional** (SefinNacional SPED v1.00) diretamente pelo WHMCS, via API REST com autenticação mTLS (certificado digital A1 ICP-Brasil).
 
@@ -49,6 +49,18 @@ includes/hooks/nfse_nacional_hooks.php
 
 ---
 
+## Atualização (1.7.4 → 1.7.5)
+
+1. Faça backup dos arquivos afetados fora do webroot. Confira o SHA-256 do ZIP do [Release 1.7.5](https://github.com/eseixas/nfse-nacional-whmcs/releases/tag/v1.7.5).
+2. Atualize `modules/addons/nfse_nacional/lib/NfseController.php`, `modules/addons/nfse_nacional/nfse_nacional.php` e `modules/addons/nfse_nacional/whmcs.json`.
+3. Preserve configurações, certificados em `certs/`, armazenamento protegido e arquivos de debug. Não desative/reative o addon e não envie certificado como parte desta atualização. Não há migração de banco ou troca de credenciais nesta versão.
+4. Confira sintaxe e telas de Clientes, certificado e exportação, mantendo rollback disponível. Não emita NFS-e nem execute diagnóstico da API como smoke test.
+5. Se houver customizações chamando `dashboard()`/`exportar()`, o terceiro argumento agora é `showBackLink` (link fixo), não autorização para HTML. Adapte chamadas com argumento nomeado `flashRaw`.
+
+As mensagens são escapadas em UTF-8 com substituição de bytes inválidos; links/botões fixos ficam separados do texto. A rotação CSRF existente é mantida. A mudança corrige uma saída sem escape, mas não comprova uma cadeia XSS explorável em produção.
+
+---
+
 ## Atualização (1.7.3 → 1.7.4)
 
 1. Substitua `modules/addons/nfse_nacional/` e `includes/hooks/nfse_nacional_hooks.php` (não apague `certs/` legado no servidor).
@@ -68,7 +80,9 @@ Na raiz do repositório (PHP 8.1+, sem WHMCS):
 php tests/run.php
 ```
 
-Cobre política de emissão (idempotência), storage fora do webroot, resolução `packageid`, `totTrib`, endereço estrangeiro e `xDescServ`.
+Cobre política de emissão (idempotência), storage fora do webroot, resolução `packageid`, `totTrib`, endereço estrangeiro e `xDescServ`. Inclui regressões de escape de mensagens, Clientes, CSRF, upload e falhas de exportação ZIP/PDF com mocks, tags, aspas e UTF-8 inválido; preserva links e botões fixos.
+
+PHP 8.3.33: 69 checks, zero falhas, sem banco/certificado/API reais. `ext-zip` habilita os checks de agregação ZIP/PDF; sem ela, esse trecho informa `SKIP`. Não houve emissão real, cobertura de código ou QA completo em WHMCS/browser real nesta rodada. Compatibilidade declarada permanece PHP 8.1+ e WHMCS 8.x+.
 
 ---
 

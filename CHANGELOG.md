@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.5] - 2026-09-30
+
+### Segurança e correções
+
+- Mensagens administrativas sempre escapadas com `ENT_QUOTES | ENT_SUBSTITUTE` e UTF-8 explícito. Corrigido o tratamento amplo de exceções em Clientes e o retorno de upload de certificado.
+- O antigo modo `raw` deixou de permitir HTML nas mensagens. Links fixos de retorno e botões permanecem no renderer; a exceção CSRF é tipada para preservar o link em Clientes.
+- Falhas da exportação ZIP/PDF são agregadas como texto e escapadas uma única vez ao renderizar, evitando escape duplicado.
+- Token CSRF recebido como array é rejeitado com mensagem controlada. A rotação existente do token NFSe foi preservada.
+- Endurecimento preventivo: não foi comprovada uma cadeia XSS com entrada controlada por atacante nem exploração em produção.
+
+### Atualização
+
+- Atualizar `lib/NfseController.php`, `nfse_nacional.php` e `whmcs.json` do addon. Preservar certificados, storage protegido, debug e configurações; sem migração de banco ou troca de credenciais.
+- Customizações que chamem `dashboard()`/`exportar()` devem revisar o terceiro argumento, agora `showBackLink`; chamadas nomeadas com `flashRaw` precisam ser adaptadas.
+
+### Testes
+
+- `php tests/run.php`: 69 verificações, zero falhas, no PHP 8.3.33; cobre mensagens com tags/aspas, UTF-8 inválido, CSRF, upload, Clientes, exportação ZIP/PDF e markup fixo legítimo, usando mocks sem banco/certificado/API reais.
+- `ext-zip` habilita a regressão de agregação ZIP/PDF; sem ela, esse trecho informa `SKIP`. Não houve emissão fiscal real, consulta à API fiscal ou QA completo em WHMCS/browser real. Requisitos existentes de PHP 8.1+ e WHMCS 8.x+ mantidos.
+
 ## [1.7.4] — 2026-09-11
 
 ### Correções
