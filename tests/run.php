@@ -4,6 +4,9 @@
  */
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
+// Isolated session for controller regression tests, before any output.
+session_id('nfse-test-' . bin2hex(random_bytes(8)));
+session_start();
 
 if (!defined('WHMCS')) {
     define('WHMCS', true);
@@ -236,6 +239,8 @@ $invalido = NfseXmlBuilder::validarDocumentoTomador([
     'id' => 9,
 ]);
 check($invalido !== null, 'CPF com 10 digitos nao e aceito com pad');
+
+require __DIR__ . '/security.php';
 
 echo "\n{$passed} ok, {$failed} falha(s)\n";
 exit($failed === 0 ? 0 : 1);

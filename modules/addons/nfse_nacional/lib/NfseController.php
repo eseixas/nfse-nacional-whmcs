@@ -15,6 +15,10 @@ require_once __DIR__ . '/NfsePdfGenerator.php';
 
 use WHMCS\Database\Capsule;
 
+class NfseCsrfException extends \RuntimeException
+{
+}
+
 class NfseController
 {
     private $vars;
@@ -36,7 +40,7 @@ class NfseController
     // Dashboard
     // =========================================================================
 
-    public function dashboard(?string $flashMsg = null, string $flashType = 'success', bool $flashRaw = false): void
+    public function dashboard(?string $flashMsg = null, string $flashType = 'success', bool $showBackLink = false): void
     {
         $stats = [
             'emitidas'  => Capsule::table('mod_nfse_nacional')->where('status', 'emitida')->count(),
@@ -66,7 +70,7 @@ class NfseController
         $this->renderNav();
 
         if ($flashMsg !== null) {
-            $this->flash($flashMsg, $flashType, $flashRaw);
+            $this->flash($flashMsg, $flashType, $showBackLink);
         }
 
         // Alerta CNPJ/IM nao configurado
@@ -246,7 +250,7 @@ class NfseController
             try {
                 $this->verifyCsrf();
             } catch (\Exception $e) {
-                $flash = '<div class="alert alert-danger"><i class="fa fa-times"></i> ' . $e->getMessage() . '</div>';
+                $flash = '<div class="alert alert-danger"><i class="fa fa-times"></i> ' . self::escapeMessage($e->getMessage()) . ' <a href="javascript:history.back()">Volte</a> e tente novamente.</div>';
                 goto render_form;
             }
 
@@ -256,8 +260,8 @@ class NfseController
             );
 
             $flash = $result['success']
-                ? '<div class="alert alert-success"><i class="fa fa-check"></i> ' . htmlspecialchars($result['message']) . '</div>'
-                : '<div class="alert alert-danger"><i class="fa fa-times"></i> ' . htmlspecialchars($result['message']) . '</div>';
+                ? '<div class="alert alert-success"><i class="fa fa-check"></i> ' . self::escapeMessage($result['message']) . '</div>'
+                : '<div class="alert alert-danger"><i class="fa fa-times"></i> ' . self::escapeMessage($result['message']) . '</div>';
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_cert'])) {
@@ -361,7 +365,7 @@ class NfseController
     // =========================================================================
     // Exportar por periodo -> ZIP
     // =========================================================================
-    public function exportar(?string $flashMsg = null, string $flashType = 'success', bool $flashRaw = false): void
+    public function exportar(?string $flashMsg = null, string $flashType = 'success', bool $showBackLink = false): void
     {
         // POST = gera e envia o ZIP diretamente (flashMsg indica retorno de erro do gerarZip)
         if ($flashMsg === null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exportar'])) {
@@ -388,7 +392,7 @@ class NfseController
         $this->renderNav();
 
         if ($flashMsg !== null) {
-            $this->flash($flashMsg, $flashType, $flashRaw);
+            $this->flash($flashMsg, $flashType, $showBackLink);
         }
         ?>
         <div class="panel panel-default">
@@ -635,9 +639,9 @@ class NfseController
             @unlink($zipTemp);
             $msg = 'Nenhum arquivo foi gerado para o periodo selecionado.';
             if ($falhas) {
-                $msg .= ' Falhas: ' . htmlspecialchars(implode(' | ', array_slice($falhas, 0, 5)));
+                $msg .= ' Falhas: ' . implode(' | ', array_slice($falhas, 0, 5));
             }
-            $this->exportar($msg, 'warning', true);
+            $this->exportar($msg, 'warning');
             return;
         }
 
@@ -1274,7 +1278,7 @@ class NfseController
                     $this->flash('Selecione um cliente valido.', 'danger');
                 }
             } catch (\Throwable $e) {
-                $this->flash($e->getMessage(), 'danger', true);
+                $this->flash($e->getMessage(), 'danger', $e instanceof NfseCsrfException);
             }
         }
 
@@ -1486,9 +1490,19 @@ class NfseController
         echo '</ul>';
     }
 
-    private function flash(string $msg, string $type = 'success', bool $raw = false): void
+    private static function escapeMessage(string $msg): string
     {
-        $body = $raw ? $msg : htmlspecialchars($msg);
+        return htmlspecialchars($msg, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private function flash(string $msg, string $type = 'success', bool $showBackLink = false): void
+    {
+        // All message text is untrusted; markup is supplied only by this renderer.
+        $body = self::escapeMessage($msg);
+        if ($showBackLink) {
+            $body .= ' <a href="javascript:history.back()">Volte</a> e tente novamente.';
+        }
+        $type = in_array($type, ['success', 'danger', 'warning', 'info'], true) ? $type : 'info';
         echo '<div class="alert alert-' . $type . ' alert-dismissible">'
             . '<button type="button" class="close" data-dismiss="alert">&times;</button>'
             . $body . '</div>';
@@ -1556,8 +1570,8 @@ class NfseController
         // Regenera sempre antes de lancar excecaoo
         $_SESSION['nfse_nacional_csrf'] = bin2hex(random_bytes(24));
 
-        if (empty($tokenPost) || empty($tokenSession) || !hash_equals($tokenSession, $tokenPost)) {
-            throw new \Exception('Sessao expirada ou token invalido. <a href="javascript:history.back()">Volte</a> e tente novamente.');
+        if (!is_string($tokenPost) || !is_string($tokenSession) || $tokenPost === '' || $tokenSession === '' || !hash_equals($tokenSession, $tokenPost)) {
+            throw new NfseCsrfException('Sessao expirada ou token invalido.');
         }
 
         // Rotaciona o token apos uso bem-sucedido
