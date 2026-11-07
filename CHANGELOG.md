@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.7.6] - 2026-11-07
+
+### Corrigido
+
+- A base da NFS-e passa a ser conferida contra os itens da fatura (`NfseEmissionPolicy::valorServico`): `tblinvoices.total` precisa ser igual a soma dos itens + impostos. Juros e multa de mora cobrados na fatura devem estar no total e, portanto, na nota. Se o total divergir dos itens (caso da fatura #112: linha "Juros de mora" criada, total nominal mantido), a emissao e recusada com mensagem clara e registro no log, em vez de emitir uma nota com base errada.
+- Requer o gateway `bancointer-whmcs` 1.5.5, que passa a incluir juros/multa no total antes da baixa.
+
+### Testes
+
+- `php tests/run.php`: novos casos para total com juros, total sem juros e impostos.
+
 ## [1.7.5] - 2026-09-30
 
 ### Segurança e correções

@@ -165,6 +165,13 @@ class NfseService
             return array('success' => false, 'message' => $docError);
         }
 
+        $base = NfseEmissionPolicy::valorServico($invoice);
+        if (!$base['ok']) {
+            $this->log('error', 'emissao', $base['message'],
+                array('total' => $base['valor'], 'total_itens' => $base['total_itens']), $invoiceId);
+            return array('success' => false, 'message' => $base['message']);
+        }
+
         $certs  = $this->certMgr->read();
         $signer = new NfseSigner($certs);
 
