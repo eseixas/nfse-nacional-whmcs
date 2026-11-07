@@ -240,6 +240,25 @@ $invalido = NfseXmlBuilder::validarDocumentoTomador([
 ]);
 check($invalido !== null, 'CPF com 10 digitos nao e aceito com pad');
 
+// Base da NFS-e: juros/multa precisam estar no total da fatura (caso #112)
+$okFat = NfseEmissionPolicy::valorServico(array(
+    'total' => '84.48', 'tax' => '0.00', 'tax2' => '0.00',
+    'items' => array(array('amount' => '0.00'), array('amount' => '82.50'), array('amount' => '1.98')),
+));
+check($okFat['ok'] === true && $okFat['valor'] === 84.48, 'base da nota inclui juros quando o total fecha com os itens');
+
+$badFat = NfseEmissionPolicy::valorServico(array(
+    'total' => '82.50', 'tax' => '0.00', 'tax2' => '0.00',
+    'items' => array(array('amount' => '0.00'), array('amount' => '82.50'), array('amount' => '1.98')),
+));
+check($badFat['ok'] === false && $badFat['total_itens'] === 84.48, 'nao emite quando o total exclui os juros dos itens');
+check(str_contains($badFat['message'], 'diverge'), 'mensagem explica a divergencia');
+
+$taxFat = NfseEmissionPolicy::valorServico(array(
+    'total' => '21.00', 'tax' => '0.60', 'tax2' => '0.40', 'items' => array(array('amount' => '20.00')),
+));
+check($taxFat['ok'] === true, 'impostos da fatura entram na conferencia');
+
 require __DIR__ . '/security.php';
 
 echo "\n{$passed} ok, {$failed} falha(s)\n";

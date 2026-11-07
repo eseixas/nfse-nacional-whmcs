@@ -52,6 +52,38 @@ class NfseEmissionPolicy
     }
 
     /**
+     * Valor do servico para a nota: precisa incluir juros/multa cobrados na fatura.
+     * A fatura so e confiavel se tblinvoices.total == soma dos itens + impostos;
+     * se divergir (ex.: linha de juros inserida sem recalcular o total), nao emitir
+     * uma nota fiscal com base errada.
+     *
+     * @param array $invoice Linha de tblinvoices com chave 'items' (linhas de tblinvoiceitems)
+     * @return array{ok:bool,valor:float,total_itens:float,message:string}
+     */
+    public static function valorServico(array $invoice): array
+    {
+        $total = round((float)($invoice['total'] ?? 0), 2);
+        $sum   = 0.0;
+        foreach (($invoice['items'] ?? array()) as $item) {
+            $sum += (float)(is_array($item) ? ($item['amount'] ?? 0) : 0);
+        }
+        $itens = round($sum + (float)($invoice['tax'] ?? 0) + (float)($invoice['tax2'] ?? 0), 2);
+
+        if (abs($itens - $total) >= 0.01) {
+            return array(
+                'ok'          => false,
+                'valor'       => $total,
+                'total_itens' => $itens,
+                'message'     => 'Total da fatura (R$ ' . number_format($total, 2, ',', '.')
+                    . ') diverge da soma dos itens (R$ ' . number_format($itens, 2, ',', '.')
+                    . '), possivel juros/multa fora do total. Corrija a fatura antes de emitir a NFS-e.',
+            );
+        }
+
+        return array('ok' => true, 'valor' => $total, 'total_itens' => $itens, 'message' => '');
+    }
+
+    /**
      * @return array{action:string,n_dps:?int,xml:?string}
      */
     private static function result(string $action, ?int $nDps, ?string $xml): array
